@@ -3,6 +3,7 @@
     "boost-signals2",
     "boost-container",
     "boost-thread",
+    "boost-interprocess",
     "fmt",
     "zlib",
     "lz4"
