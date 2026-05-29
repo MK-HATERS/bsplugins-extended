@@ -36,14 +36,32 @@ if(MSVC)
 	)
 endif()
 
+# Qt - must be found before mo2_configure_plugin so AUTOMOC knows the Qt version
 find_package(Qt6 COMPONENTS Core Widgets WebEngineWidgets REQUIRED)
+target_link_libraries(bsplugins PRIVATE Qt6::Core Qt6::Widgets Qt6::WebEngineWidgets)
 
-mo2_configure_plugin(
-	bsplugins
-	WARNINGS OFF
-	PRIVATE_DEPENDS
-		bsatk lootcli uibase
-		boost fmt zlib
-		Qt::WebEngineWidgets
-)
+# uibase - enable deprecated include so game_features/ headers are on the include path
+set(MO2_CMAKE_DEPRECATED_UIBASE_INCLUDE ON)
+find_package(mo2-uibase CONFIG REQUIRED)
+target_link_libraries(bsplugins PRIVATE mo2::uibase)
+
+# bsatk and lootcli
+find_package(mo2-bsatk CONFIG REQUIRED)
+target_link_libraries(bsplugins PRIVATE mo2::bsatk)
+
+find_package(mo2-lootcli CONFIG REQUIRED)
+target_link_libraries(bsplugins PRIVATE mo2::lootcli)
+
+# Boost (signals2 + container are header-only; thread is not)
+find_package(Boost REQUIRED COMPONENTS thread)
+target_link_libraries(bsplugins PRIVATE Boost::boost Boost::thread)
+
+# fmt and zlib
+find_package(fmt CONFIG REQUIRED)
+target_link_libraries(bsplugins PRIVATE fmt::fmt)
+
+find_package(ZLIB REQUIRED)
+target_link_libraries(bsplugins PRIVATE ZLIB::ZLIB)
+
+mo2_configure_plugin(bsplugins WARNINGS OFF)
 mo2_install_plugin(bsplugins)
