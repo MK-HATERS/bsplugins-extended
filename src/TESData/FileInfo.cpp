@@ -64,6 +64,17 @@ bool FileInfo::mustLoadAfter(const FileInfo& other) const
     return true;
   }
 
+  // Blueprint plugins always load after every non-blueprint plugin,
+  // regardless of master flag.
+  const bool thisBP  = m_Metadata.isBlueprintFlagged || m_Metadata.isBlueprintPrefixed;
+  const bool otherBP = other.m_Metadata.isBlueprintFlagged || other.m_Metadata.isBlueprintPrefixed;
+  if (thisBP && !otherBP) {
+    return true;
+  }
+  if (otherBP && !thisBP) {
+    return false;
+  }
+
   if (other.isMasterFile() && !this->isMasterFile()) {
     return true;
   }
