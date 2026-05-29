@@ -1,4 +1,5 @@
 vsbuild/
 CHANGELOG.md
 BUILD_MEMORY.md
+CMakeUserPresets.json
 
