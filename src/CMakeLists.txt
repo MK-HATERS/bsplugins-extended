@@ -49,12 +49,12 @@ target_link_libraries(bsplugins PRIVATE mo2::uibase)
 find_package(mo2-bsatk CONFIG REQUIRED)
 target_link_libraries(bsplugins PRIVATE mo2::bsatk)
 
-find_package(mo2-lootcli CONFIG REQUIRED)
-target_link_libraries(bsplugins PRIVATE mo2::lootcli)
+find_package(mo2-lootcli-header CONFIG REQUIRED)
+target_link_libraries(bsplugins PRIVATE mo2::lootcli-header)
 
-# Boost (signals2 + container are header-only; thread is not)
-find_package(Boost REQUIRED COMPONENTS thread)
-target_link_libraries(bsplugins PRIVATE Boost::boost Boost::thread)
+# Boost - container has compiled parts; signals2 is header-only via Boost::headers
+find_package(Boost CONFIG REQUIRED COMPONENTS thread container)
+target_link_libraries(bsplugins PRIVATE Boost::headers Boost::thread Boost::container)
 
 # fmt and zlib
 find_package(fmt CONFIG REQUIRED)
