@@ -45,6 +45,10 @@ QList<QString> FlagIconDelegate::getIcons(const QModelIndex& index) const
     icons.append(":/MO/gui/instance_switch");
   }
 
+  if (flags & FLAG_BLUEPRINT) {
+    icons.append(":/MO/gui/link");
+  }
+
   if (flags & FLAG_CLEAN) {
     icons.append(":/MO/gui/edit_clear");
   }

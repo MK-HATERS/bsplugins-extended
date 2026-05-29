@@ -505,7 +505,19 @@ QVariant PluginListModel::tooltipData(const QModelIndex& index) const
                  spacing;
     }
 
-    if (plugin->forceDisabled()) {
+    if (plugin->isBlueprintFlagged() || plugin->isBlueprintPrefixed()) {
+      if (plugin->forceEnabled() || plugin->forceLoaded()) {
+        toolTip +=
+            tr("This is a blueprint plugin. It is automatically loaded alongside "
+               "its paired main plugin.") +
+            spacing;
+      } else {
+        toolTip +=
+            tr("This is a blueprint plugin. It will be enabled automatically "
+               "when its paired main plugin is enabled.") +
+            spacing;
+      }
+    } else if (plugin->forceDisabled()) {
       toolTip += tr("This game does not currently permit custom plugin "
                     "loading. There may be manual workarounds.");
     }
@@ -615,6 +627,10 @@ QVariant PluginListModel::iconData(const QModelIndex& index) const
 
   if (plugin->isOverlayFlagged()) {
     flag |= FLAG_OVERLAY;
+  }
+
+  if (plugin->isBlueprintFlagged() || plugin->isBlueprintPrefixed()) {
+    flag |= FLAG_BLUEPRINT;
   }
 
   if (lootInfo && !lootInfo->dirty.empty() && Settings::instance()->lootShowDirty()) {

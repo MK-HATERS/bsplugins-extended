@@ -287,6 +287,7 @@ void PluginList::setEnabled(int id, bool enable)
 
   if (shouldEnable != enabled) {
     plugin->setEnabled(shouldEnable);
+    applyBlueprintPairForPlugin(*plugin);
     computeCompileIndices();
     refreshLoadOrder();
     pluginStatesChanged({plugin->name()}, shouldEnable ? STATE_ACTIVE : STATE_INACTIVE);
@@ -306,6 +307,7 @@ void PluginList::setEnabled(const std::vector<int>& ids, bool enable)
 
     if (shouldEnable != enabled) {
       plugin->setEnabled(shouldEnable);
+      applyBlueprintPairForPlugin(*plugin);
       changed.append(plugin->name());
     }
   }
@@ -331,6 +333,7 @@ void PluginList::toggleState(const std::vector<int>& ids)
 
     if (shouldEnable != enabled) {
       plugin->setEnabled(shouldEnable);
+      applyBlueprintPairForPlugin(*plugin);
       if (shouldEnable) {
         active.append(plugin->name());
       } else {
@@ -938,8 +941,8 @@ bool PluginList::isLightFlagged(const QString& name) const
 
 bool PluginList::isBlueprintFlagged(const QString& name) const
 {
-  Q_UNUSED(name);
-  return false;
+  const auto plugin = findPlugin(name);
+  return plugin ? plugin->isBlueprintFlagged() : false;
 }
 
 bool PluginList::isOverlayFlagged(const QString& name) const
@@ -1153,6 +1156,9 @@ void PluginList::scanDataFiles(bool invalidate)
   }
 
   const auto managedGame = m_Organizer->managedGame();
+  const auto gameName    = managedGame ? managedGame->gameName() : QString();
+  const bool isFallout4  = gameName.startsWith(u"Fallout 4"_s);
+  const bool isStarfield = (gameName == u"Starfield"_s);
 
   const QStringList primaryPlugins =
       managedGame ? managedGame->primaryPlugins() : QStringList();
@@ -1167,7 +1173,15 @@ void PluginList::scanDataFiles(bool invalidate)
 
   const bool lightPluginsAreSupported =
       tesSupport && tesSupport->lightPluginsAreSupported();
-  const bool overridePluginsAreSupported = false;
+  const bool overlayPluginsAreSupported = isStarfield || isFallout4;
+  const bool blueprintPluginsAreSupported =
+      tesSupport && tesSupport->blueprintPluginsAreSupported();
+
+  m_BlueprintPlugins = blueprintPluginsAreSupported;
+  m_BlueprintPrefix =
+      (blueprintPluginsAreSupported && managedGame)
+          ? managedGame->blueprintPrefix()
+          : QString();
 
   QStringList availablePlugins;
 
@@ -1228,6 +1242,11 @@ void PluginList::scanDataFiles(bool invalidate)
         std::make_shared<FileInfo>(this, filename, forceLoaded, forceEnabled,
                                    forceDisabled, lightPluginsAreSupported));
 
+    if (blueprintPluginsAreSupported) {
+      info->setBlueprintPrefixed(
+          filename.startsWith(m_BlueprintPrefix, Qt::CaseInsensitive));
+    }
+
     auto assocTask = std::async([=, &smph] {
       smph.acquire();
       checkBsa(*info, tree);
@@ -1240,7 +1259,8 @@ void PluginList::scanDataFiles(bool invalidate)
 
       try {
         FileConflictParser handler{this, info.get(), lightPluginsAreSupported,
-                                   overridePluginsAreSupported};
+                                   overlayPluginsAreSupported,
+                                   blueprintPluginsAreSupported};
         TESFile::Reader<FileConflictParser> reader{};
         reader.parse(std::filesystem::path(path), handler);
       } catch (const std::exception& e) {
@@ -1262,6 +1282,18 @@ void PluginList::scanDataFiles(bool invalidate)
     });
   }
 
+  // Blueprint-flagged or blueprint-prefixed plugins start force disabled;
+  // applyBlueprintPairs() will selectively re-enable them after load order is read.
+  if (blueprintPluginsAreSupported) {
+    for (auto& plugin : m_Plugins) {
+      if (!plugin->forceLoaded() &&
+          (plugin->isBlueprintFlagged() || plugin->isBlueprintPrefixed())) {
+        plugin->setForceEnabled(false);
+        plugin->setForceDisabled(true);
+      }
+    }
+  }
+
   assignConsecutivePriorities(m_Plugins);
   updateCache();
 }
@@ -1276,6 +1308,7 @@ void PluginList::readPluginLists()
   }
 
   enforcePluginRelationships();
+  applyBlueprintPairs();
 }
 
 static void populateArchiveFiles(const std::shared_ptr<AuxItem>& master,
@@ -1695,6 +1728,61 @@ void PluginList::pluginStatesChanged(const QStringList& pluginNames,
   }
 
   m_PluginStateChanged(infos);
+}
+
+void PluginList::applyBlueprintPairForPlugin(const FileInfo& plugin)
+{
+  if (!m_BlueprintPlugins || m_BlueprintPrefix.isEmpty()) {
+    return;
+  }
+  if (plugin.name().startsWith(m_BlueprintPrefix, Qt::CaseInsensitive)) {
+    return;
+  }
+
+  const QString blueprintName =
+      m_BlueprintPrefix + QFileInfo(plugin.name()).completeBaseName() + u".esm"_s;
+  const auto it = m_PluginsByName.find(blueprintName);
+  if (it == m_PluginsByName.end()) {
+    return;
+  }
+
+  auto& bp = m_Plugins.at(it->second);
+  if (bp->forceLoaded()) {
+    return;
+  }
+
+  const bool pairActive = plugin.enabled() || plugin.isAlwaysEnabled();
+  if (pairActive) {
+    bp->setForceDisabled(false);
+    bp->setForceEnabled(true);
+    bp->setEnabled(true);
+  } else {
+    bp->setForceDisabled(true);
+    bp->setForceEnabled(false);
+    bp->setEnabled(false);
+  }
+}
+
+void PluginList::applyBlueprintPairs()
+{
+  if (!m_BlueprintPlugins || m_BlueprintPrefix.isEmpty()) {
+    return;
+  }
+
+  // Force disable every blueprint-flagged/prefixed plugin that isn't CCC-managed.
+  for (auto& plugin : m_Plugins) {
+    if (!plugin->forceLoaded() &&
+        (plugin->isBlueprintFlagged() || plugin->isBlueprintPrefixed())) {
+      plugin->setForceEnabled(false);
+      plugin->setForceDisabled(true);
+      plugin->setEnabled(false);
+    }
+  }
+
+  // Then selectively re-enable those with an active regular plugin pair.
+  for (auto& plugin : m_Plugins) {
+    applyBlueprintPairForPlugin(*plugin);
+  }
 }
 
 void PluginList::enforcePluginRelationships()

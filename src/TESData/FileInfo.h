@@ -43,6 +43,7 @@ public:
     FLAG_OVERLAY     = 0x040,
     FLAG_CLEAN       = 0x080,
     FLAG_LOCKED      = 0x100,
+    FLAG_BLUEPRINT   = 0x200,
   };
 
   struct FileSystemData
@@ -65,10 +66,12 @@ public:
     QString author;
     QString description;
 
-    bool isMasterFlagged;
-    bool isLightFlagged;
-    bool isOverlayFlagged;
-    bool hasNoRecords;
+    bool isMasterFlagged    = false;
+    bool isLightFlagged     = false;
+    bool isOverlayFlagged   = false;
+    bool isBlueprintFlagged = false;
+    bool isBlueprintPrefixed = false;
+    bool hasNoRecords       = false;
 
     QStringList masters;
     mutable boost::container::flat_set<QString, MOBase::FileNameComparator> masterUnset;
@@ -113,7 +116,9 @@ public:
 
   [[nodiscard]] bool forceLoaded() const { return m_FileSystemData.forceLoaded; }
   [[nodiscard]] bool forceEnabled() const { return m_FileSystemData.forceEnabled; }
+  void setForceEnabled(bool value) { m_FileSystemData.forceEnabled = value; }
   [[nodiscard]] bool forceDisabled() const { return m_FileSystemData.forceDisabled; }
+  void setForceDisabled(bool value) { m_FileSystemData.forceDisabled = value; }
 
   [[nodiscard]] bool hasIni() const { return m_FileSystemData.hasIni; }
   void setHasIni(bool hasIni) { m_FileSystemData.hasIni = hasIni; }
@@ -130,6 +135,10 @@ public:
   void setLightFlagged(bool value) { m_Metadata.isLightFlagged = value; }
   [[nodiscard]] bool isOverlayFlagged() const { return m_Metadata.isOverlayFlagged; }
   void setOverlayFlagged(bool value) { m_Metadata.isOverlayFlagged = value; }
+  [[nodiscard]] bool isBlueprintFlagged() const { return m_Metadata.isBlueprintFlagged; }
+  void setBlueprintFlagged(bool value) { m_Metadata.isBlueprintFlagged = value; }
+  [[nodiscard]] bool isBlueprintPrefixed() const { return m_Metadata.isBlueprintPrefixed; }
+  void setBlueprintPrefixed(bool value) { m_Metadata.isBlueprintPrefixed = value; }
   [[nodiscard]] bool hasNoRecords() const { return m_Metadata.hasNoRecords; }
   void setHasNoRecords(bool value) { m_Metadata.hasNoRecords = value; }
 

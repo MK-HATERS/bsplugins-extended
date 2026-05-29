@@ -11,9 +11,10 @@ namespace TESData
 {
 
 FileConflictParser::FileConflictParser(PluginList* pluginList, FileInfo* plugin,
-                                       bool lightSupported, bool overlaySupported)
+                                       bool lightSupported, bool overlaySupported,
+                                       bool blueprintSupported)
     : m_PluginList{pluginList}, m_Plugin{plugin}, m_LightSupported{lightSupported},
-      m_OverlaySupported{overlaySupported}
+      m_OverlaySupported{overlaySupported}, m_BlueprintSupported{blueprintSupported}
 {
   m_PluginName = m_Plugin->name().toStdString();
 }
@@ -58,13 +59,19 @@ bool FileConflictParser::Form(TESFile::FormData form)
 
   if (m_CurrentPath.groups().empty()) {
     if (form.type() == "TES4"_ts) {
-      m_Plugin->setMasterFlagged(form.flags() & TESFile::RecordFlags::Master);
+      const bool isMasterFlagged = form.flags() & TESFile::RecordFlags::Master;
+      m_Plugin->setMasterFlagged(isMasterFlagged);
       m_Plugin->setOverlayFlagged(m_OverlaySupported &&
                                   (form.flags() & TESFile::RecordFlags::Overlay));
       m_Plugin->setLightFlagged(
           m_OverlaySupported ? (form.flags() & TESFile::RecordFlags::LightNew)
           : m_LightSupported ? (form.flags() & TESFile::RecordFlags::LightOld)
                              : false);
+      const bool isBlueprintEligible = isMasterFlagged ||
+                                       m_Plugin->hasMasterExtension() ||
+                                       m_Plugin->hasLightExtension();
+      m_Plugin->setBlueprintFlagged(m_BlueprintSupported && isBlueprintEligible &&
+                                    (form.flags() & TESFile::RecordFlags::Blueprint));
       return true;
     } else {
       throw std::runtime_error("Unsupported header record");

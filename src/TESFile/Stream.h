@@ -89,6 +89,8 @@ struct RecordFlags
     LightNew  = 0x100,
     LightOld  = 0x200,
     Overlay   = 0x200,
+    Medium    = 0x400,
+    Blueprint = 0x800,
   };
 
   enum Flag : std::uint32_t

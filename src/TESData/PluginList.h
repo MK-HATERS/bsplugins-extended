@@ -123,7 +123,7 @@ public:
   [[nodiscard]] bool isMasterFlagged(const QString& name) const override;
   [[nodiscard]] bool isMediumFlagged(const QString& name) const override;
   [[nodiscard]] bool isLightFlagged(const QString& name) const override;
-  [[nodiscard]] bool isBlueprintFlagged(const QString& name) const;
+  [[nodiscard]] bool isBlueprintFlagged(const QString& name) const override;
   [[nodiscard]] bool isOverlayFlagged(const QString& name) const;
   [[nodiscard]] bool hasNoRecords(const QString& name) const override;
   [[nodiscard]] int formVersion(const QString& name) const;
@@ -178,6 +178,8 @@ private:
   void dispatchPluginStateChanges();
   void pluginStatesChanged(const QStringList& pluginNames, PluginStates state) const;
   void enforcePluginRelationships();
+  void applyBlueprintPairs();
+  void applyBlueprintPairForPlugin(const FileInfo& plugin);
   void testMasters();
   void updateCache();
   void computeCompileIndices();
@@ -211,6 +213,9 @@ private:
   bool m_Refreshing = true;
   std::map<QString, PluginStates> m_QueuedStateChanges;
   std::set<QString> m_PendingActive;
+
+  bool m_BlueprintPlugins = false;
+  QString m_BlueprintPrefix;
 
   SignalRefreshed m_Refreshed;
   SignalPluginMoved m_PluginMoved;
