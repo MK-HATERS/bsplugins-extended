@@ -26,5 +26,11 @@
         }
       }
     }
+  ],
+  "buildPresets": [
+    {
+      "name": "vs2022-windows",
+      "configurePreset": "vs2022-windows"
+    }
   ]
 }

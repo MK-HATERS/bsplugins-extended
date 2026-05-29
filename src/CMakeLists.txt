@@ -36,6 +36,8 @@ if(MSVC)
 	)
 endif()
 
+find_package(Qt6 COMPONENTS Core Widgets WebEngineWidgets REQUIRED)
+
 mo2_configure_plugin(
 	bsplugins
 	WARNINGS OFF
