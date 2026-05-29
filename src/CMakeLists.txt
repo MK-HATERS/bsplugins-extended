@@ -44,4 +44,4 @@ mo2_configure_plugin(
 		boost fmt zlib
 		Qt::WebEngineWidgets
 )
-mo2_install_target(bsplugins)
+mo2_install_plugin(bsplugins)
