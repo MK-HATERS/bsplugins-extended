@@ -10,8 +10,8 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(esp_json)
 
-set(PYTHON_BUILD_PATH ${PYTHON_ROOT}/PCBuild/amd64)
-set(Python_EXECUTABLE ${PYTHON_BUILD_PATH}/python.exe)
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+set(Python_EXECUTABLE ${Python3_EXECUTABLE})
 
 find_program(CLANG_FORMAT clang-format)
 
