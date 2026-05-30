@@ -41,9 +41,10 @@ public:
     FLAG_MASTER      = 0x010,
     FLAG_LIGHT       = 0x020,
     FLAG_OVERLAY     = 0x040,
-    FLAG_CLEAN       = 0x080,
-    FLAG_LOCKED      = 0x100,
-    FLAG_BLUEPRINT   = 0x200,
+    FLAG_MEDIUM      = 0x080,
+    FLAG_CLEAN       = 0x100,
+    FLAG_LOCKED      = 0x200,
+    FLAG_BLUEPRINT   = 0x400,
   };
 
   struct FileSystemData
@@ -68,6 +69,7 @@ public:
 
     bool isMasterFlagged    = false;
     bool isLightFlagged     = false;
+    bool isMediumFlagged    = false;
     bool isOverlayFlagged   = false;
     bool isBlueprintFlagged = false;
     bool isBlueprintPrefixed = false;
@@ -133,6 +135,8 @@ public:
   void setMasterFlagged(bool value) { m_Metadata.isMasterFlagged = value; }
   [[nodiscard]] bool isLightFlagged() const { return m_Metadata.isLightFlagged; }
   void setLightFlagged(bool value) { m_Metadata.isLightFlagged = value; }
+  [[nodiscard]] bool isMediumFlagged() const { return m_Metadata.isMediumFlagged; }
+  void setMediumFlagged(bool value) { m_Metadata.isMediumFlagged = value; }
   [[nodiscard]] bool isOverlayFlagged() const { return m_Metadata.isOverlayFlagged; }
   void setOverlayFlagged(bool value) { m_Metadata.isOverlayFlagged = value; }
   [[nodiscard]] bool isBlueprintFlagged() const { return m_Metadata.isBlueprintFlagged; }

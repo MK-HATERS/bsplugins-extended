@@ -364,9 +364,26 @@ bool PluginList::canMoveToPriority(const std::vector<int>& ids, int newPriority)
     names.insert(plugin->name());
   }
 
+  // Compute the first priority index occupied by blueprint plugins.
+  // Blueprint plugins live strictly after all non-blueprint plugins.
+  int blueprintStart = static_cast<int>(m_PluginsByPriority.size());
+  if (m_BlueprintPlugins) {
+    for (int p = 0; p < static_cast<int>(m_PluginsByPriority.size()); ++p) {
+      const auto& pl = m_Plugins.at(m_PluginsByPriority[p]);
+      if (!pl->forceLoaded() &&
+          (pl->isBlueprintFlagged() || pl->isBlueprintPrefixed())) {
+        blueprintStart = p;
+        break;
+      }
+    }
+  }
+
   for (const int id : ids) {
     const auto pluginToMove = m_Plugins[id];
     const int priority      = pluginToMove->priority();
+    const bool movingBlueprint =
+        m_BlueprintPlugins && !pluginToMove->forceLoaded() &&
+        (pluginToMove->isBlueprintFlagged() || pluginToMove->isBlueprintPrefixed());
 
     if (pluginToMove->forceLoaded()) {
       const int min = std::min(priority, newPriority);
@@ -375,6 +392,18 @@ bool PluginList::canMoveToPriority(const std::vector<int>& ids, int newPriority)
         if (std::ranges::find(ids, m_PluginsByPriority.at(i)) == std::end(ids)) {
           return false;
         }
+      }
+    }
+
+    // Enforce blueprint zone boundaries: blueprints can't cross into the
+    // non-blueprint section and vice versa.
+    if (m_BlueprintPlugins) {
+      if (movingBlueprint && newPriority < blueprintStart) {
+        return false;
+      }
+      if (!movingBlueprint && !pluginToMove->forceLoaded() &&
+          newPriority >= blueprintStart) {
+        return false;
       }
     }
 
@@ -929,8 +958,8 @@ bool PluginList::isMasterFlagged(const QString& name) const
 
 bool PluginList::isMediumFlagged(const QString& name) const
 {
-  Q_UNUSED(name);
-  return false;
+  const auto plugin = findPlugin(name);
+  return plugin ? plugin->isMediumFlagged() : false;
 }
 
 bool PluginList::isLightFlagged(const QString& name) const
@@ -1873,6 +1902,7 @@ void PluginList::computeCompileIndices()
 {
   int numNormal  = 0;
   int numESLs    = 0;
+  int numESHs    = 0;
   int numSkipped = 0;
 
     const auto gameFeatures = m_Organizer->gameFeatures();
@@ -1891,7 +1921,14 @@ void PluginList::computeCompileIndices()
       continue;
     }
 
-    if (lightPluginsAreSupported && plugin->isSmallFile()) {
+    if (plugin->isMediumFlagged()) {
+      // Medium plugins (ESH) occupy FD index space: FD:000 - FD:FFF
+      plugin->setIndex((u"FD:%1"_s)
+                           .arg(numESHs & 0xFFF, 3, 16, QChar(u'0'))
+                           .toUpper());
+      ++numESHs;
+    } else if (lightPluginsAreSupported && plugin->isSmallFile()) {
+      // Light plugins (ESL) occupy FE index space: FE:000 - FE:FFF (and beyond)
       const int ESLpos = 0xFE + (numESLs >> 12);
       plugin->setIndex((u"%1:%2"_s)
                            .arg(ESLpos, 2, 16, QChar(u'0'))

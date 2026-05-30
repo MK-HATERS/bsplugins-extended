@@ -505,17 +505,51 @@ QVariant PluginListModel::tooltipData(const QModelIndex& index) const
                  spacing;
     }
 
+    if (plugin->isMediumFlagged()) {
+      toolTip +=
+          tr("This file is flagged as a medium plugin (ESH). It adheres to the "
+             "ESM load order but loads records in ESH space (FD). You can have "
+             "256 medium plugins in addition to other plugin types.") +
+          spacing;
+      if (plugin->isLightFlagged()) {
+        toolTip +=
+            tr("WARNING: This plugin is both light and medium flagged. This could "
+               "indicate the file was saved improperly and may have mismatched "
+               "record references. Use at your own risk.") +
+            spacing;
+      }
+    }
+
     if (plugin->isBlueprintFlagged() || plugin->isBlueprintPrefixed()) {
-      if (plugin->forceEnabled() || plugin->forceLoaded()) {
+      if (plugin->isBlueprintFlagged()) {
         toolTip +=
-            tr("This is a blueprint plugin. It is automatically loaded alongside "
-               "its paired main plugin.") +
+            tr("This plugin has the blueprint flag. It forces it to load after "
+               "every other non-blueprint plugin.") +
             spacing;
-      } else {
+      }
+      if (plugin->forceDisabled()) {
+        if (plugin->isBlueprintFlagged() && plugin->isBlueprintPrefixed()) {
+          toolTip += tr("This blueprint plugin must be enabled by a paired main plugin.") +
+                     spacing;
+        } else if (plugin->isBlueprintFlagged() && !plugin->isBlueprintPrefixed()) {
+          toolTip +=
+              tr("This blueprint plugin is not using the blueprint prefix and "
+                 "can't be loaded.") +
+              spacing;
+        } else {
+          toolTip +=
+              tr("This is an invalid blueprint file with no blueprint flag.") + spacing;
+        }
+      } else if (plugin->isBlueprintPrefixed() && plugin->enabled() &&
+                 !plugin->isBlueprintFlagged()) {
         toolTip +=
-            tr("This is a blueprint plugin. It will be enabled automatically "
-               "when its paired main plugin is enabled.") +
+            tr("WARNING: This is a blueprint-prefixed but unflagged plugin being "
+               "autoloaded by another main plugin. This is unintended usage and "
+               "may result in an ambiguous load order.") +
             spacing;
+      } else if (plugin->isBlueprintPrefixed() && plugin->isBlueprintFlagged()) {
+        toolTip +=
+            tr("This plugin is being loaded by a paired main plugin.") + spacing;
       }
     } else if (plugin->forceDisabled()) {
       toolTip += tr("This game does not currently permit custom plugin "
@@ -567,6 +601,19 @@ static bool isProblematic(const TESData::FileInfo* plugin,
 {
   if (plugin && plugin->enabled() && plugin->hasMissingMasters()) {
     return true;
+  }
+
+  if (plugin) {
+    // Blueprint-flagged but not blueprint-prefixed: game can't load it
+    if (plugin->isBlueprintFlagged() && !plugin->isBlueprintPrefixed()) {
+      return true;
+    }
+    // Blueprint-prefixed but not blueprint-flagged and currently enabled:
+    // unintended autoload, may produce ambiguous load order
+    if (plugin->isBlueprintPrefixed() && plugin->enabled() &&
+        !plugin->isBlueprintFlagged()) {
+      return true;
+    }
   }
 
   if (lootInfo && Settings::instance()->lootShowProblems()) {
@@ -627,6 +674,10 @@ QVariant PluginListModel::iconData(const QModelIndex& index) const
 
   if (plugin->isOverlayFlagged()) {
     flag |= FLAG_OVERLAY;
+  }
+
+  if (plugin->isMediumFlagged()) {
+    flag |= FLAG_MEDIUM;
   }
 
   if (plugin->isBlueprintFlagged() || plugin->isBlueprintPrefixed()) {

@@ -51,13 +51,23 @@ bool FileInfo::canBeToggled() const
 
 bool FileInfo::mustLoadAfter(const FileInfo& other) const
 {
-  const bool hasMaster = this->masters().contains(other.name(), Qt::CaseInsensitive);
-  const bool isMaster  = other.masters().contains(this->name(), Qt::CaseInsensitive);
+  const bool thisBlueprint =
+      !this->forceLoaded() &&
+      (m_Metadata.isBlueprintFlagged || m_Metadata.isBlueprintPrefixed);
+  const bool otherBlueprint =
+      !other.forceLoaded() &&
+      (other.m_Metadata.isBlueprintFlagged || other.m_Metadata.isBlueprintPrefixed);
 
-  if (hasMaster && !isMaster) {
-    return true;
-  } else if (isMaster) {
-    return false;
+  // Master-child relationships only apply within the same blueprint zone.
+  // A regular master does not constrain a blueprint plugin and vice versa.
+  if (thisBlueprint == otherBlueprint) {
+    const bool hasMaster = this->masters().contains(other.name(), Qt::CaseInsensitive);
+    const bool isMaster  = other.masters().contains(this->name(), Qt::CaseInsensitive);
+    if (hasMaster && !isMaster) {
+      return true;
+    } else if (isMaster) {
+      return false;
+    }
   }
 
   if (other.forceLoaded() && !this->forceLoaded()) {

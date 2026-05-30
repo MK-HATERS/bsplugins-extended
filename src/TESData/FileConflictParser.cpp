@@ -67,6 +67,8 @@ bool FileConflictParser::Form(TESFile::FormData form)
           m_OverlaySupported ? (form.flags() & TESFile::RecordFlags::LightNew)
           : m_LightSupported ? (form.flags() & TESFile::RecordFlags::LightOld)
                              : false);
+      m_Plugin->setMediumFlagged(m_OverlaySupported &&
+                                 (form.flags() & TESFile::RecordFlags::Medium));
       const bool isBlueprintEligible = isMasterFlagged ||
                                        m_Plugin->hasMasterExtension() ||
                                        m_Plugin->hasLightExtension();
