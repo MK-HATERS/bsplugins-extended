@@ -33,6 +33,7 @@ if(MSVC)
 			/WX     # treat all compiler warnings as errors
 			/wd4201 # nonstandard extension used: nameless struct/union
 			/wd4458 # declaration of 'identifier' hides class member
+			/wd4996 # deprecated API (strerror, Qt invalidateRowsFilter)
 	)
 endif()
 

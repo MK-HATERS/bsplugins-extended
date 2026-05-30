@@ -121,7 +121,7 @@ static void writeGroups(const QString& plugingroups, std::map<QString, QString>&
     }
   }
 
-  file.commit();
+  file->commit();
 }
 
 void importLootGroups(const TESData::PluginList* pluginList,
