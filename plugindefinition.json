@@ -1,19 +1,19 @@
 {
-    "Name": "Bethesda Plugin Manager",
-    "Author": "Parapets",
-    "Description": "Manages plugin load order for Bethesda Game Studios game engines",
+    "Name": "Bethesda Plugin Manager - Extended",
+    "Author": "MK-HATERS",
+    "Description": "Manages plugin load order for Bethesda Game Studios game engines. Extended with full Starfield blueprint/medium/overlay plugin support and latest MO2 compatibility.",
     "DocsUrl": "",
-    "GithubUrl": "https://github.com/Exit-9B/modorganizer-bsplugins",
-    "NexusUrl": "https://www.nexusmods.com/skyrimspecialedition/mods/111236",
+    "GithubUrl": "https://github.com/MK-HATERS/bsplugins-extended",
+    "NexusUrl": "",
     "Versions": [
         {
-            "Version": "0.1.5.0b",
-            "Released": "2024-02-15",
-            "MinSupport": "2.5.0",
+            "Version": "0.2.0.0b",
+            "Released": "2026-05-30",
+            "MinSupport": "2.5.2",
             "MaxSupport": "",
-            "MinWorking": "2.5.0",
+            "MinWorking": "2.5.2",
             "MaxWorking": "",
-            "DownloadUrl": "https://github.com/Exit-9B/modorganizer-bsplugins/releases/download/v0.1.5/bsplugins-v0.1.5.7z",
+            "DownloadUrl": "https://github.com/MK-HATERS/bsplugins-extended/releases",
             "PluginPath": [
                 "plugins/bsplugins.dll"
             ],
@@ -21,7 +21,12 @@
                 "translations/bsplugins_en.qm"
             ],
             "DataPath": [],
-            "ReleaseNotes": []
+            "ReleaseNotes": [
+                "Full Starfield blueprint plugin support: auto force-enable/disable, zone enforcement, validation",
+                "Medium plugin (ESH) support with FD index space",
+                "Overlay plugin detection fixed for Starfield and Fallout 4",
+                "Rebuilt for latest MO2 uibase and cmake_common"
+            ]
         }
     ]
 }
