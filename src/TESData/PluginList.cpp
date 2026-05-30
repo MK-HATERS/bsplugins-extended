@@ -1783,6 +1783,20 @@ void PluginList::applyBlueprintPairs()
   for (auto& plugin : m_Plugins) {
     applyBlueprintPairForPlugin(*plugin);
   }
+
+  // Sort non-force-loaded blueprint plugins to the end of the load order.
+  // enforcePluginRelationships() cannot handle this safely (multi-step swaps
+  // corrupt the priority array), so we do it explicitly with stable_partition.
+  std::stable_partition(
+      m_PluginsByPriority.begin(), m_PluginsByPriority.end(),
+      [this](int idx) {
+        const auto& p = m_Plugins.at(idx);
+        return p->forceLoaded() ||
+               (!p->isBlueprintFlagged() && !p->isBlueprintPrefixed());
+      });
+  for (int i = 0; i < static_cast<int>(m_PluginsByPriority.size()); ++i) {
+    m_Plugins.at(m_PluginsByPriority[i])->setPriority(i);
+  }
 }
 
 void PluginList::enforcePluginRelationships()
