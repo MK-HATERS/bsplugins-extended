@@ -12,9 +12,10 @@ namespace TESData
 
 FileConflictParser::FileConflictParser(PluginList* pluginList, FileInfo* plugin,
                                        bool lightSupported, bool overlaySupported,
-                                       bool blueprintSupported)
+                                       bool mediumSupported, bool blueprintSupported)
     : m_PluginList{pluginList}, m_Plugin{plugin}, m_LightSupported{lightSupported},
-      m_OverlaySupported{overlaySupported}, m_BlueprintSupported{blueprintSupported}
+      m_OverlaySupported{overlaySupported}, m_MediumSupported{mediumSupported},
+      m_BlueprintSupported{blueprintSupported}
 {
   m_PluginName = m_Plugin->name().toStdString();
 }
@@ -67,7 +68,7 @@ bool FileConflictParser::Form(TESFile::FormData form)
           m_OverlaySupported ? (form.flags() & TESFile::RecordFlags::LightNew)
           : m_LightSupported ? (form.flags() & TESFile::RecordFlags::LightOld)
                              : false);
-      m_Plugin->setMediumFlagged(m_OverlaySupported &&
+      m_Plugin->setMediumFlagged(m_MediumSupported &&
                                  (form.flags() & TESFile::RecordFlags::Medium));
       const bool isBlueprintEligible = isMasterFlagged ||
                                        m_Plugin->hasMasterExtension() ||

@@ -17,7 +17,8 @@ class FileConflictParser final
 {
 public:
   FileConflictParser(PluginList* pluginList, FileInfo* plugin, bool lightSupported,
-                    bool overlaySupported, bool blueprintSupported);
+                    bool overlaySupported, bool mediumSupported,
+                    bool blueprintSupported);
 
   bool Group(TESFile::GroupData group);
   void EndGroup();
@@ -36,6 +37,7 @@ private:
   FileInfo* m_Plugin;
   bool m_LightSupported;
   bool m_OverlaySupported;
+  bool m_MediumSupported;
   bool m_BlueprintSupported;
 
   std::string m_PluginName;

@@ -500,6 +500,28 @@ void PluginList::moveToPriority(std::vector<int> ids, int destination, bool disj
   destination = std::max(destination, 0);
   destination = std::min(destination, pluginCount());
 
+  // Clamp destination to the correct blueprint zone so programmatic moves
+  // (keyboard shortcuts, LOOT sort) cannot cross the zone boundary either.
+  if (m_BlueprintPlugins && !ids.empty()) {
+    int blueprintStart = static_cast<int>(m_PluginsByPriority.size());
+    for (int p = 0; p < static_cast<int>(m_PluginsByPriority.size()); ++p) {
+      const auto& pl = m_Plugins.at(m_PluginsByPriority[p]);
+      if (!pl->forceLoaded() &&
+          (pl->isBlueprintFlagged() || pl->isBlueprintPrefixed())) {
+        blueprintStart = p;
+        break;
+      }
+    }
+    const auto first = m_Plugins.at(ids.front());
+    const bool movingBlueprint = !first->forceLoaded() &&
+                                 (first->isBlueprintFlagged() || first->isBlueprintPrefixed());
+    if (movingBlueprint) {
+      destination = std::max(destination, blueprintStart);
+    } else {
+      destination = std::min(destination, blueprintStart);
+    }
+  }
+
   boost::container::flat_set<QString, MOBase::FileNameComparator> names;
   names.reserve(ids.size());
   boost::container::flat_map<QString, int> priorities;
@@ -1203,6 +1225,8 @@ void PluginList::scanDataFiles(bool invalidate)
   const bool lightPluginsAreSupported =
       tesSupport && tesSupport->lightPluginsAreSupported();
   const bool overlayPluginsAreSupported = isStarfield || isFallout4;
+  const bool mediumPluginsAreSupported =
+      tesSupport && tesSupport->mediumPluginsAreSupported();
   const bool blueprintPluginsAreSupported =
       tesSupport && tesSupport->blueprintPluginsAreSupported();
 
@@ -1289,6 +1313,7 @@ void PluginList::scanDataFiles(bool invalidate)
       try {
         FileConflictParser handler{this, info.get(), lightPluginsAreSupported,
                                    overlayPluginsAreSupported,
+                                   mediumPluginsAreSupported,
                                    blueprintPluginsAreSupported};
         TESFile::Reader<FileConflictParser> reader{};
         reader.parse(std::filesystem::path(path), handler);
