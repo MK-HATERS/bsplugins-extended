@@ -35,7 +35,7 @@ Blueprint plugins work like archives — when a regular plugin is loaded, its pa
 
 - **Auto force-enable/disable** — blueprint plugins are force-disabled by default and activate automatically when their paired main plugin is enabled or disabled
 - **Correct load order position** — blueprint plugins always sort to the end of the load order, after all non-blueprint plugins, matching game behaviour
-- **Zone enforcement** — blueprint plugins cannot be dragged into the non-blueprint section and vice versa
+- **Zone enforcement** — blueprint plugins cannot be moved into the non-blueprint section and vice versa, whether by drag-and-drop, keyboard shortcut, or any programmatic reorder
 - **Link icon** in the flags column identifies blueprint plugins at a glance
 - **CCC file support** — plugins manually added to the CCC file remain force-enabled regardless
 
@@ -50,9 +50,9 @@ Blueprint plugins work like archives — when a regular plugin is loaded, its pa
 **Problem detection** — the warning icon is shown for blueprints in invalid states (flagged but wrongly named, or named like a blueprint but missing the flag).
 
 ### Medium Plugins (ESH, `0x400` flag)
-Starfield introduced medium-sized plugins between full plugins and ESL plugins.
+Starfield introduced medium-sized plugins that sit between full plugins and ESL plugins. This is a Starfield-exclusive plugin type — not enabled for other games.
 
-- Detected from the `0x400` TES4 header flag
+- Detected from the `0x400` TES4 header flag via `GamePlugins::mediumPluginsAreSupported()`
 - Assigned **`FD:xxx`** index space (256 slots, parallel to ESL's `FE:xxx`)
 - Flag icon and tooltip explaining ESH space and the 256-slot limit
 - Warning shown if a plugin is incorrectly flagged as both light (ESL) and medium simultaneously
@@ -63,6 +63,9 @@ Starfield introduced medium-sized plugins between full plugins and ESL plugins.
 
 ### Master-Child Zone Isolation
 Following MO2's rules, master-dependency constraints are only enforced within the same blueprint zone. A regular master plugin does not affect the ordering of blueprint plugins and vice versa.
+
+### LOOT Integration
+LOOT sorting is fully supported for Starfield (re-enabled in LOOT v0.29.0). The LOOT report analysis — dirty/clean plugin info, incompatibilities, missing masters — is displayed inline in the plugin list tooltip. Blueprint and medium plugins are handled transparently by the LOOT library; no special configuration is required.
 
 ---
 
