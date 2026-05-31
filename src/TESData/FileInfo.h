@@ -42,9 +42,10 @@ public:
     FLAG_LIGHT       = 0x020,
     FLAG_OVERLAY     = 0x040,
     FLAG_MEDIUM      = 0x080,
-    FLAG_CLEAN       = 0x100,
-    FLAG_LOCKED      = 0x200,
-    FLAG_BLUEPRINT   = 0x400,
+    FLAG_CLEAN            = 0x100,
+    FLAG_LOCKED           = 0x200,
+    FLAG_BLUEPRINT        = 0x400,
+    FLAG_PATCH_SUGGESTION = 0x800,  // inferred patch relationship (query beacon)
   };
 
   struct FileSystemData

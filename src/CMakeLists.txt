@@ -13,56 +13,55 @@ FetchContent_MakeAvailable(ryml)
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/ParseTES.cmake)
 
+# Pre-find packages that mo2-bsatk-config.cmake needs via find_dependency.
+# Pattern follows modorganizer-preview_bsa — find_package here so cmake can
+# satisfy the transitive dependency lookups without extra vcpkg hints.
+find_package(mo2-cmake CONFIG REQUIRED)
+find_package(ZLIB REQUIRED)
+find_package(lz4 CONFIG REQUIRED)
+find_package(Boost CONFIG REQUIRED COMPONENTS thread interprocess)
+find_package(mo2-dds-header CONFIG REQUIRED)
+
+# fmt must be linked explicitly: uibase's log.h instantiates fmt templates
+# inside our translation units, producing unresolved fmt::vformat symbols
+# at link time even though uibase itself links fmt privately.
+find_package(fmt CONFIG REQUIRED)
+
+# MO2 library dependencies
+set(MO2_CMAKE_DEPRECATED_UIBASE_INCLUDE ON)
+find_package(mo2-uibase CONFIG REQUIRED)
+find_package(mo2-bsatk CONFIG REQUIRED)
+find_package(mo2-lootcli-header CONFIG REQUIRED)
+
+# Qt modules that mo2::uibase does not re-export as INTERFACE
+find_package(Qt6 COMPONENTS WebEngineWidgets Svg REQUIRED)
+
 add_library(bsplugins SHARED)
 
-# Generated TES form parser .inl — added before mo2_configure_sources globbing runs
+# Generated TES form parser .inl — added before mo2_configure_sources globs
 target_sources(bsplugins PRIVATE ${TES_INCLUDE_FILES})
-
-# The generated include dir (FormParser.*.inl output) must be on the path
 target_include_directories(bsplugins
 	PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}
 	PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/include
 )
 
-target_link_libraries(bsplugins PRIVATE ryml)
+target_link_libraries(bsplugins PRIVATE
+	ryml
+	mo2::uibase
+	mo2::bsatk
+	mo2::lootcli-header
+	fmt::fmt
+	Qt6::WebEngineWidgets
+	Qt6::Svg
+)
 
-# --- Dependencies ---------------------------------------------------------
-# uibase: enable deprecated include so game_features/ headers are reachable.
-# Qt6::Core and Qt6::Widgets come transitively via mo2::uibase (it is itself
-# a Qt library and exports them as INTERFACE dependencies).
-# fmt and zlib are also transitive through uibase/bsatk.
-set(MO2_CMAKE_DEPRECATED_UIBASE_INCLUDE ON)
-find_package(mo2-uibase CONFIG REQUIRED)
-target_link_libraries(bsplugins PRIVATE mo2::uibase)
-
-find_package(mo2-bsatk CONFIG REQUIRED)
-target_link_libraries(bsplugins PRIVATE mo2::bsatk)
-
-find_package(mo2-lootcli-header CONFIG REQUIRED)
-target_link_libraries(bsplugins PRIVATE mo2::lootcli-header)
-
-# WebEngineWidgets is only used by this plugin — not provided transitively.
-# Svg is needed to render the custom SVG icon resources.
-find_package(Qt6 COMPONENTS WebEngineWidgets Svg REQUIRED)
-target_link_libraries(bsplugins PRIVATE Qt6::WebEngineWidgets Qt6::Svg)
-
-# Boost::thread has compiled parts we use directly (boost::thread::future).
-# The header-only Boost components (signals2, container, range) come
-# transitively once mo2-bsatk-config calls find_dependency(Boost ...).
-find_package(Boost CONFIG REQUIRED COMPONENTS thread)
-target_link_libraries(bsplugins PRIVATE Boost::thread)
-
-# --- MO2 plugin configuration ---------------------------------------------
 # mo2_configure_plugin handles: source glob, C++23, /MP, /permissive-, LTCG,
-# AUTOMOC/AUTOUIC/AUTORCC, NOMINMAX, QT_MESSAGELOGCONTEXT, GITID, translations.
-# BIGOBJ ON  → /bigobj (large object files from template-heavy TES parsing)
-# WARNINGS 4 → /W4 + /external:anglebrackets /external:W1 for system headers
+# AUTOMOC/AUTOUIC/AUTORCC, NOMINMAX, QT_MESSAGELOGCONTEXT, GITID, translations
 mo2_configure_plugin(bsplugins
 	BIGOBJ   ON
 	WARNINGS 4
 )
 
-# Warnings-as-errors and specific suppressions not covered by mo2_configure_warnings
 if(MSVC)
 	target_compile_options(bsplugins PRIVATE
 		/WX     # treat all warnings as errors

@@ -514,6 +514,23 @@ QVariant PluginListModel::tooltipData(const QModelIndex& index) const
           "</b>" + spacing;
     }
 
+    if (plugin->enabled()) {
+      const auto& inferred = plugin->getInferredOverrides();
+      auto maxIt = std::max_element(inferred.constBegin(), inferred.constEnd());
+      if (maxIt != inferred.constEnd() && maxIt.value() >= 20) {
+        const auto other = m_Plugins->getPlugin(maxIt.key());
+        if (other) {
+          toolTip +=
+              tr("? Overrides %1 records also modified by <b>%2</b> without "
+                 "declaring it as a master. If this plugin patches %2, "
+                 "use <i>Apply Inferred Load Order</i> to fix the position.")
+                  .arg(maxIt.value())
+                  .arg(other->name()) +
+              spacing;
+        }
+      }
+    }
+
     if (plugin->hasIni()) {
       toolTip +=
           tr("There is an ini file connected to this plugin. Its settings will "
@@ -734,6 +751,18 @@ QVariant PluginListModel::iconData(const QModelIndex& index) const
 
   if (plugin->isBlueprintFlagged() || plugin->isBlueprintPrefixed()) {
     flag |= FLAG_BLUEPRINT;
+  }
+
+  // Inferred patch suggestion: plugin overrides many records from another
+  // without mastering it. Only shown at a high threshold (>=20) to avoid
+  // false positives from incidental record overlap.
+  if (plugin->enabled()) {
+    for (const int count : plugin->getInferredOverrides()) {
+      if (count >= 20) {
+        flag |= FLAG_PATCH_SUGGESTION;
+        break;
+      }
+    }
   }
 
   if (lootInfo && !lootInfo->dirty.empty() && Settings::instance()->lootShowDirty()) {

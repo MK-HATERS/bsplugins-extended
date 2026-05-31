@@ -72,6 +72,11 @@ QList<QString> FlagIconDelegate::getIcons(const QModelIndex& index) const
     icons.append(":/bsplugins/mag-lock");
   }
 
+  // Inferred patch relationship — may need to load after another plugin
+  if (flags & FLAG_PATCH_SUGGESTION) {
+    icons.append(":/bsplugins/query-beacon");
+  }
+
   return icons;
 }
 
