@@ -67,13 +67,15 @@ public:
     QString author;
     QString description;
 
-    bool isMasterFlagged    = false;
-    bool isLightFlagged     = false;
-    bool isMediumFlagged    = false;
-    bool isOverlayFlagged   = false;
-    bool isBlueprintFlagged = false;
+    bool isMasterFlagged     = false;
+    bool isLightFlagged      = false;
+    bool isMediumFlagged     = false;
+    bool isOverlayFlagged    = false;
+    bool isBlueprintFlagged  = false;
     bool isBlueprintPrefixed = false;
-    bool hasNoRecords       = false;
+    bool hasNoRecords        = false;
+    bool hasInvalidFormIds   = false;
+    int  interiorCellCount   = 0;
 
     QStringList masters;
     mutable boost::container::flat_set<QString, MOBase::FileNameComparator> masterUnset;
@@ -145,6 +147,10 @@ public:
   void setBlueprintPrefixed(bool value) { m_Metadata.isBlueprintPrefixed = value; }
   [[nodiscard]] bool hasNoRecords() const { return m_Metadata.hasNoRecords; }
   void setHasNoRecords(bool value) { m_Metadata.hasNoRecords = value; }
+  [[nodiscard]] bool hasInvalidFormIds() const { return m_Metadata.hasInvalidFormIds; }
+  void setHasInvalidFormIds(bool value) { m_Metadata.hasInvalidFormIds = value; }
+  [[nodiscard]] int interiorCellCount() const { return m_Metadata.interiorCellCount; }
+  void setInteriorCellCount(int value) { m_Metadata.interiorCellCount = value; }
 
   [[nodiscard]] const auto& masters() const { return m_Metadata.masters; }
   void addMaster(const QString& master) { m_Metadata.masters.push_back(master); }

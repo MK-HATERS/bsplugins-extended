@@ -425,6 +425,20 @@ QVariant PluginListModel::tooltipData(const QModelIndex& index) const
                           "typically used to load a paired archive file.");
     }
 
+    if (plugin->hasInvalidFormIds()) {
+      toolTip +=
+          "<br><br><b>" +
+          tr("WARNING: This plugin is flagged as ESL or ESH but contains records "
+             "with ObjectIDs outside the allowed range. ESL plugins must keep "
+             "ObjectIDs ≤ 0xFFF; ESH plugins must keep ObjectIDs ≤ 0xFF. "
+             "This indicates a broken export from the Creation Kit.") +
+          "</b>";
+    }
+
+    if (plugin->interiorCellCount() > 0) {
+      toolTip += "<br>" + tr("Interior cells: %1").arg(plugin->interiorCellCount());
+    }
+
     m_TooltipCache.insert(cacheId, toolTip);
     return toolTip;
   }
@@ -612,6 +626,10 @@ static bool isProblematic(const TESData::FileInfo* plugin,
     // unintended autoload, may produce ambiguous load order
     if (plugin->isBlueprintPrefixed() && plugin->enabled() &&
         !plugin->isBlueprintFlagged()) {
+      return true;
+    }
+    // ESL/ESH plugin contains records whose ObjectIDs exceed the allowed range
+    if (plugin->hasInvalidFormIds()) {
       return true;
     }
   }

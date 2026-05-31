@@ -75,6 +75,10 @@ bool FileConflictParser::Form(TESFile::FormData form)
                                        m_Plugin->hasLightExtension();
       m_Plugin->setBlueprintFlagged(m_BlueprintSupported && isBlueprintEligible &&
                                     (form.flags() & TESFile::RecordFlags::Blueprint));
+
+      // Cache flags for ObjectID validation of subsequent records
+      m_IsLightPlugin  = m_Plugin->isLightFlagged() || m_Plugin->hasLightExtension();
+      m_IsMediumPlugin = m_Plugin->isMediumFlagged();
       return true;
     } else {
       throw std::runtime_error("Unsupported header record");
@@ -88,8 +92,17 @@ bool FileConflictParser::Form(TESFile::FormData form)
   default:
     m_CurrentPath.setFormId(form.formId(), m_Masters, m_PluginName);
 
-
-
+    // ObjectID range validation for ESL/ESH plugins.
+    // Records defined by this plugin (upper byte == 0) must fit within
+    // the allowed ObjectID space: 0x000–0xFFF for ESL, 0x00–0xFF for ESH.
+    if ((m_IsLightPlugin || m_IsMediumPlugin) && (form.formId() >> 24) == 0) {
+      const std::uint32_t objectId = form.formId() & 0xFFFFFF;
+      if (m_IsMediumPlugin && objectId > 0x0000FF) {
+        m_Plugin->setHasInvalidFormIds(true);
+      } else if (m_IsLightPlugin && !m_IsMediumPlugin && objectId > 0x000FFF) {
+        m_Plugin->setHasInvalidFormIds(true);
+      }
+    }
 
     return true;
   }
@@ -119,6 +132,8 @@ bool FileConflictParser::Chunk(TESFile::Type type)
     case "MAST"_ts:
     case "CNAM"_ts:
     case "SNAM"_ts:
+    case "ONAM"_ts:
+    case "INCC"_ts:
       return true;
     }
     return false;
@@ -192,6 +207,27 @@ void FileConflictParser::MainRecordData(std::istream& stream)
     const std::string desc = TESFile::readZstring(stream);
     if (!desc.empty()) {
       m_Plugin->setDescription(QString::fromLatin1(desc.data()));
+    }
+  } break;
+
+  case "ONAM"_ts: {
+    // Array of 4-byte FormIDs declaring overrides for records that live inside
+    // CELL/WRLD groups (landscapes, navmeshes, dialogs, scenes). Reading this
+    // allows conflict detection without a full CELL/WRLD group scan.
+    while (stream.peek() != std::char_traits<char>::eof()) {
+      const auto formId = TESFile::readType<std::uint32_t>(stream);
+      if (stream.fail())
+        break;
+      RecordPath path;
+      path.setFormId(formId, m_Masters, m_PluginName);
+      m_PluginList->addRecordConflict(m_PluginName, path, "ONAM"_ts, "");
+    }
+  } break;
+
+  case "INCC"_ts: {
+    const auto count = TESFile::readType<std::int32_t>(stream);
+    if (!stream.fail() && count > 0) {
+      m_Plugin->setInteriorCellCount(count);
     }
   } break;
   }

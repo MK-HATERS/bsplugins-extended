@@ -46,6 +46,10 @@ private:
   TESFile::Type m_CurrentType;
   TESFile::Type m_CurrentChunk;
   std::string m_CurrentName;
+
+  // Set after TES4 is parsed; drives ObjectID range validation
+  bool m_IsLightPlugin  = false;
+  bool m_IsMediumPlugin = false;
 };
 
 }  // namespace TESData
