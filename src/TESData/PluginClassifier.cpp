@@ -1,8 +1,10 @@
 #include "PluginClassifier.h"
 #include "FileInfo.h"
 #include "MOPlugin/BSPluginsINI.h"
+#include "TESFile/Stream.h"
 
 #include <QFileInfo>
+#include <QSettings>
 
 using namespace Qt::Literals::StringLiterals;
 
@@ -70,7 +72,78 @@ static constexpr quint32 type(const char s[5])
 
 Classification classifyPlugin(const FileInfo& plugin, const QString& blueprintPrefix)
 {
+  // Return cached result if still valid (invalidated when priority changes)
+  if (plugin.m_Metadata.classificationCached) {
+    Classification cached;
+    cached.zone       = static_cast<PluginZone>(plugin.m_Metadata.cachedZone);
+    cached.confidence = plugin.m_Metadata.cachedConfidence;
+    cached.groupName  = plugin.m_Metadata.cachedGroupName;
+    cached.reason     = plugin.m_Metadata.cachedReason;
+    return cached;
+  }
+
   Classification result;
+
+  // Helper to cache and return
+  const auto cacheAndReturn = [&](Classification& r) -> Classification& {
+    plugin.m_Metadata.classificationCached = true;
+    plugin.m_Metadata.cachedZone           = static_cast<int>(r.zone);
+    plugin.m_Metadata.cachedConfidence     = r.confidence;
+    plugin.m_Metadata.cachedGroupName      = r.groupName;
+    plugin.m_Metadata.cachedReason         = r.reason;
+    return r;
+  };
+
+  // --- 0. Mod-author .bs hint (highest priority of all) ------------------
+  if (plugin.hasBsHint()) {
+    result.groupName  = plugin.bsGroupHint();
+    result.confidence = 95;
+    result.reason     = u"Mod author hint (.bs file)"_s;
+    // Map the zone string to our enum; fall back to the hint's zone name as group
+    // if the zone doesn't match a known name (allows custom zones too)
+    const QString& z = plugin.bsZoneHint();
+    if      (z.compare(u"Frameworks"_s,   Qt::CaseInsensitive) == 0) result.zone = PluginZone::Frameworks;
+    else if (z.compare(u"World Changes"_s,Qt::CaseInsensitive) == 0) result.zone = PluginZone::WorldChanges;
+    else if (z.compare(u"Gameplay"_s,     Qt::CaseInsensitive) == 0) result.zone = PluginZone::Gameplay;
+    else if (z.compare(u"NPCs & Content"_s,Qt::CaseInsensitive)==0) result.zone = PluginZone::NPCsContent;
+    else if (z.compare(u"Visuals"_s,      Qt::CaseInsensitive) == 0) result.zone = PluginZone::Visuals;
+    else if (z.compare(u"Patches"_s,      Qt::CaseInsensitive) == 0) result.zone = PluginZone::Patches;
+    else result.zone = PluginZone::Visuals;  // default zone for unknown hint
+    return cacheAndReturn(result);
+  }
+
+  // --- 0b. User-defined custom group rules --------------------------------
+  const auto customGroups = MOPlugin::pluginINI().customGroups();
+  for (const auto& cg : customGroups) {
+    if (cg.recordTypes.isEmpty()) continue;  // record filter needed for matching
+    const auto& hist = plugin.recordTypeHistogram();
+    if (hist.isEmpty()) continue;
+    int total = 0;
+    for (int v : hist) total += v;
+    int matched = 0;
+    for (const QString& rt : cg.recordTypes) {
+      const QByteArray ba = rt.toLatin1();
+      if (ba.size() < 4) continue;
+      const quint32 key = quint32(ba[0]) | quint32(ba[1]) << 8 |
+                          quint32(ba[2]) << 16 | quint32(ba[3]) << 24;
+      matched += hist.value(key, 0);
+    }
+    if (total > 0 && matched * 100 / total >= cg.threshold) {
+      result.groupName  = cg.name;
+      result.confidence = 85;
+      result.reason     = u"Custom group rule (%1%% match)"_s.arg(matched * 100 / total);
+      // Map zone string to enum
+      const QString& z = cg.zone;
+      if      (z == u"Frameworks"_s)    result.zone = PluginZone::Frameworks;
+      else if (z == u"World Changes"_s) result.zone = PluginZone::WorldChanges;
+      else if (z == u"Gameplay"_s)      result.zone = PluginZone::Gameplay;
+      else if (z == u"NPCs & Content"_s)result.zone = PluginZone::NPCsContent;
+      else if (z == u"Visuals"_s)       result.zone = PluginZone::Visuals;
+      else if (z == u"Patches"_s)       result.zone = PluginZone::Patches;
+      else                              result.zone = PluginZone::Visuals;
+      return cacheAndReturn(result);
+    }
+  }
 
   // --- 1. Force-loaded = Core (game manages position) --------------------
   if (plugin.forceLoaded()) {
@@ -78,7 +151,7 @@ Classification classifyPlugin(const FileInfo& plugin, const QString& blueprintPr
     result.confidence = 100;
     result.groupName  = u"Core"_s;
     result.reason     = u"Force-loaded by the game"_s;
-    return result;
+    return cacheAndReturn(result);
   }
 
   // --- 2. Blueprint plugin -----------------------------------------------
@@ -88,7 +161,7 @@ Classification classifyPlugin(const FileInfo& plugin, const QString& blueprintPr
     result.confidence = 95;
     result.groupName  = u"Blueprints"_s;
     result.reason     = u"Blueprint plugin auto-loaded with its paired main plugin"_s;
-    return result;
+    return cacheAndReturn(result);
   }
 
   // --- 3. Archive loader (dummy plugin + archives, no real records) -------
@@ -98,7 +171,7 @@ Classification classifyPlugin(const FileInfo& plugin, const QString& blueprintPr
     result.groupName     = u"Archive Loaders"_s;
     result.reason        = u"No records — exists to load BSA/BA2 archive(s)"_s;
     result.isArchiveLoader = true;
-    return result;
+    return cacheAndReturn(result);
   }
 
   // --- 4. Framework patch detection (masters list) -----------------------
@@ -111,7 +184,7 @@ Classification classifyPlugin(const FileInfo& plugin, const QString& blueprintPr
       // Use user's custom zone name from INI, not the framework's hardcoded name
       result.groupName  = zoneGroupName(fw.zone);
       result.reason     = u"Masters %1"_s.arg(fwMaster);
-      return result;
+      return cacheAndReturn(result);
     }
   }
 
@@ -134,7 +207,7 @@ Classification classifyPlugin(const FileInfo& plugin, const QString& blueprintPr
       result.confidence = 75;
       result.groupName  = u"Lighting"_s;
       result.reason     = u"Majority LIGH records (lighting data)"_s;
-      return result;
+      return cacheAndReturn(result);
     }
 
     // Outfit / appearance: ARMO or CLOT dominant
@@ -144,7 +217,7 @@ Classification classifyPlugin(const FileInfo& plugin, const QString& blueprintPr
       result.confidence = 70;
       result.groupName  = u"Outfits & Armor"_s;
       result.reason     = u"Dominant ARMO/CLOT records (outfits)"_s;
-      return result;
+      return cacheAndReturn(result);
     }
 
     // Texture sets only → visual replacer
@@ -154,7 +227,7 @@ Classification classifyPlugin(const FileInfo& plugin, const QString& blueprintPr
       result.groupName     = u"Texture Replacers"_s;
       result.reason        = u"Dominant TXST records (texture sets)"_s;
       result.isArchiveLoader = true;
-      return result;
+      return cacheAndReturn(result);
     }
 
     // World: landscape / navmesh / world space
@@ -165,7 +238,7 @@ Classification classifyPlugin(const FileInfo& plugin, const QString& blueprintPr
       result.confidence = 70;
       result.groupName  = u"World Changes"_s;
       result.reason     = u"Dominant WRLD/LAND/CELL records (world edits)"_s;
-      return result;
+      return cacheAndReturn(result);
     }
 
     // NPC / character
@@ -175,7 +248,7 @@ Classification classifyPlugin(const FileInfo& plugin, const QString& blueprintPr
       result.confidence = 70;
       result.groupName  = u"NPCs & Characters"_s;
       result.reason     = u"Significant NPC_/RACE records (character edits)"_s;
-      return result;
+      return cacheAndReturn(result);
     }
 
     // Quest / story content
@@ -185,7 +258,7 @@ Classification classifyPlugin(const FileInfo& plugin, const QString& blueprintPr
       result.confidence = 70;
       result.groupName  = u"Quests & Content"_s;
       result.reason     = u"Significant QUST/DIAL/SCEN records (story content)"_s;
-      return result;
+      return cacheAndReturn(result);
     }
 
     // Gameplay: perks, spells, economy
@@ -197,7 +270,7 @@ Classification classifyPlugin(const FileInfo& plugin, const QString& blueprintPr
       result.confidence = 65;
       result.groupName  = u"Gameplay"_s;
       result.reason     = u"Significant perk/spell/game-setting records"_s;
-      return result;
+      return cacheAndReturn(result);
     }
 
     // Weapons / combat
@@ -207,7 +280,7 @@ Classification classifyPlugin(const FileInfo& plugin, const QString& blueprintPr
       result.confidence = 65;
       result.groupName  = u"Weapons & Combat"_s;
       result.reason     = u"Significant WEAP/AMMO records"_s;
-      return result;
+      return cacheAndReturn(result);
     }
   }
 
@@ -219,14 +292,14 @@ Classification classifyPlugin(const FileInfo& plugin, const QString& blueprintPr
     result.confidence = 40;
     result.groupName  = u"Patches"_s;
     result.reason     = u"Name contains patch/fix keyword"_s;
-    return result;
+    return cacheAndReturn(result);
   }
   if (name.contains(u"light") || name.contains(u"lighting") || name.contains(u"lux")) {
     result.zone       = PluginZone::Visuals;
     result.confidence = 35;
     result.groupName  = u"Lighting"_s;
     result.reason     = u"Name suggests lighting mod"_s;
-    return result;
+    return cacheAndReturn(result);
   }
   if (name.contains(u"skin") || name.contains(u"outfit") || name.contains(u"armor") ||
       name.contains(u"texture")) {
@@ -234,7 +307,7 @@ Classification classifyPlugin(const FileInfo& plugin, const QString& blueprintPr
     result.confidence = 35;
     result.groupName  = u"Visuals"_s;
     result.reason     = u"Name suggests visual mod"_s;
-    return result;
+    return cacheAndReturn(result);
   }
   if (name.contains(u"follower") || name.contains(u"companion") ||
       name.contains(u"npc")) {
@@ -242,7 +315,7 @@ Classification classifyPlugin(const FileInfo& plugin, const QString& blueprintPr
     result.confidence = 35;
     result.groupName  = u"NPCs & Characters"_s;
     result.reason     = u"Name suggests NPC/follower mod"_s;
-    return result;
+    return cacheAndReturn(result);
   }
 
   // --- 7. Unknown — needs user review -----------------------------------

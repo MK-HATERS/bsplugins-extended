@@ -6,6 +6,8 @@
 #include "GUI/SelectionDialog.h"
 #include "MOPlugin/Settings.h"
 #include "BSPluginsLog.h"
+#include "CustomGroupDialog.h"
+#include "GroupManagerDialog.h"
 #include "GroupReviewDialog.h"
 #include "MOPlugin/BSPlugins.h"
 #include "MOPlugin/BSPluginsINI.h"
@@ -30,9 +32,11 @@
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QFormLayout>
+#include <QGroupBox>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListView>
+#include <QPointer>
 #include <QPushButton>
 #include <QSortFilterProxyModel>
 #include <QSpinBox>
@@ -102,6 +106,36 @@ PluginsWidget::PluginsWidget(MOBase::IOrganizer* organizer,
       m_InfoBrowser = new QTextBrowser(infoPage);
       m_InfoBrowser->setOpenLinks(false);
       m_InfoBrowser->hide();
+      // Handle [Edit] link for .bs file editing
+      connect(m_InfoBrowser, &QTextBrowser::anchorClicked, this,
+              [this](const QUrl& url) {
+                if (url.toString() != u"edit_bs"_s) return;
+                // Find the currently-selected plugin's .bs path and open it
+                const auto sel = ui->pluginList->selectionModel()->selectedIndexes();
+                if (sel.isEmpty()) return;
+                const auto* plugin = m_PluginList->getPlugin(
+                    sel.first().data(PluginListModel::IndexRole).toInt());
+                if (!plugin || !plugin->hasBsHint()) return;
+                const QString bsPath = m_Organizer->resolvePath(
+                    plugin->name() + QStringLiteral(".bs"));
+                if (bsPath.isEmpty()) {
+                  // No .bs yet — create one with the current hint
+                  const QString newPath = m_Organizer->profilePath() +
+                      QStringLiteral("/bsplugins_overrides/") +
+                      plugin->name() + QStringLiteral(".bs");
+                  QDir().mkpath(QFileInfo(newPath).absolutePath());
+                  QFile f(newPath);
+                  if (f.open(QIODevice::WriteOnly | QIODevice::Text)) {
+                    QTextStream ts(&f);
+                    ts << "group=" << plugin->bsGroupHint() << "\n";
+                    if (!plugin->bsZoneHint().isEmpty())
+                      ts << "zone=" << plugin->bsZoneHint() << "\n";
+                  }
+                  QDesktopServices::openUrl(QUrl::fromLocalFile(newPath));
+                } else {
+                  QDesktopServices::openUrl(QUrl::fromLocalFile(bsPath));
+                }
+              });
 
       infoLay->addWidget(infoHint);
       infoLay->addWidget(m_InfoBrowser, 1);
@@ -219,6 +253,7 @@ PluginsWidget::PluginsWidget(MOBase::IOrganizer* organizer,
 
   // Patch Sort button: quick inferred-ordering pass without running LOOT
   auto* patchSortBtn = new QPushButton(tr("Patch Sort"), this);
+  patchSortBtn->setObjectName(u"patchSortBtn"_s);
   patchSortBtn->setToolTip(
       tr("<b>Patch Sort</b> — Quickly reorder patches after adding a few mods.<br><br>"
          "Use this when:<br>"
@@ -857,7 +892,7 @@ void PluginsWidget::showGroupReviewDialog()
   // After LOOT sort always show the full dialog — no pre-prompt.
   // For re-runs after adding a few mods, use Patch Sort button instead.
   // Only skip entirely if there's truly nothing new to suggest.
-  const bool newOnly = false;  // always full review after LOOT sort
+  // Always full review after LOOT sort — use Patch Sort for minor additions
   if (hasPreviousRun) {
     // Count new plugins to surface a log hint, but don't gate the dialog
     const int newCount = std::ranges::count_if(
@@ -867,9 +902,9 @@ void PluginsWidget::showGroupReviewDialog()
         });
     if (newCount > 0) {
       bsLog(tr("LOOT sort: %1 new plugin(s) since last review.").arg(newCount));
-    } else {
-      return;  // Nothing new at all — skip dialog
     }
+    // Don't gate the dialog on newCount — always show after LOOT sort.
+    // The dialog itself filters already-handled suggestions.
   }
 
   // --- Collect patch suggestions (inferred overrides >= 3 records) ---
@@ -910,7 +945,7 @@ void PluginsWidget::showGroupReviewDialog()
     if (plugin->forceLoaded()) continue;
 
     // In "new only" mode, skip plugins reviewed in a previous run
-    if (newOnly && reviewed.contains(plugin->name(), Qt::CaseInsensitive)) continue;
+    // (no newOnly filter — always show full review after LOOT sort)
 
     const bool alreadyGrouped = !plugin->group().isEmpty() &&
                                 plugin->group() != u"default"_s;
@@ -990,12 +1025,30 @@ void PluginsWidget::showGroupReviewDialog()
   }
 
   // Record every plugin shown in this review as "seen" for future re-runs
-  QStringList nowReviewed = reviewed;
+  // Update the reviewed list: start from previous session's list, add
+  // only plugins that were actually shown in this dialog run, and prune
+  // any that are no longer installed.
+  const QSet<QString> installed = [&]() {
+    QSet<QString> s;
+    s.reserve(pluginCount);
+    for (int i = 0; i < pluginCount; ++i) {
+      if (const auto* p = m_PluginList->getPlugin(i)) s.insert(p->name());
+    }
+    return s;
+  }();
+
+  // Carry forward previous entries that are still installed (prunes removed mods)
+  QStringList nowReviewed;
+  for (const QString& name : reviewed) {
+    if (installed.contains(name)) nowReviewed.append(name);
+  }
+  // Add newly-presented plugins (those shown in this dialog run)
   for (int i = 0; i < pluginCount; ++i) {
-    if (const auto* p = m_PluginList->getPlugin(i)) {
-      if (!nowReviewed.contains(p->name(), Qt::CaseInsensitive)) {
-        nowReviewed.append(p->name());
-      }
+    const auto* p = m_PluginList->getPlugin(i);
+    if (p && !nowReviewed.contains(p->name(), Qt::CaseInsensitive)) {
+      // Only mark shown if they were not force-loaded (force-loaded plugins
+      // are skipped in both the patch and group suggestion loops)
+      if (!p->forceLoaded()) nowReviewed.append(p->name());
     }
   }
   m_Organizer->setPersistent(BSPlugins::NAME, u"reviewed_plugins"_s,
@@ -1340,7 +1393,11 @@ void PluginsWidget::onSettingChanged(const QString& key,
                                      const QVariant& newValue)
 {
   if (key == u"enable_sort_button"_s) {
-    ui->sortButton->setVisible(newValue.value<bool>());
+    const bool visible = newValue.value<bool>();
+    ui->sortButton->setVisible(visible);
+    if (auto* b = findChild<QPushButton*>(u"patchSortBtn"_s)) {
+      b->setVisible(visible);
+    }
   } else if (key == u"enable_plugin_grouping"_s) {
     applyGroupingSetting();
     updateGroupActionVisibility();
@@ -1763,6 +1820,17 @@ void PluginsWidget::refreshInfoTab(const TESData::FileInfo* plugin)
     }
   }
 
+  // Mod-author .bs hint
+  if (plugin->hasBsHint()) {
+    html += u"<hr><b>%1</b> &nbsp; "_s.arg(tr("Mod author suggestion (.bs):"));
+    html += u"<a href='edit_bs'>%1</a><br>"_s.arg(tr("[Edit]"));
+    html += u"<code>group=%1</code><br>"_s.arg(plugin->bsGroupHint());
+    if (!plugin->bsZoneHint().isEmpty())
+      html += u"<code>zone=%1</code><br>"_s.arg(plugin->bsZoneHint());
+    html += u"<small><i>%1</i></small>"_s.arg(
+        tr("Assign in Group Manager to override this suggestion."));
+  }
+
   m_InfoBrowser->setHtml(html);
 }
 
@@ -1829,14 +1897,68 @@ QWidget* PluginsWidget::buildSettingsTab(QWidget* parent)
   namesForm->addRow(QString(), resetBtn);
   vbox->addWidget(namesGroup);
 
+  // ---- Custom Groups ----
+  auto* cgGroup = new QGroupBox(tr("Custom Groups"), page);
+  auto* cgLay   = new QVBoxLayout(cgGroup);
+  auto* cgInfo  = new QLabel(
+      tr("Define your own groups with optional record-type detection rules.\n"
+         "Custom groups are checked before built-in classification."), cgGroup);
+  cgInfo->setWordWrap(true);
+  cgInfo->setStyleSheet(u"color: gray; font-size: small;"_s);
+  cgLay->addWidget(cgInfo);
+
+  // Inline list showing existing custom groups (read-only summary)
+  auto* cgListWidget = new QListWidget(cgGroup);
+  cgListWidget->setMaximumHeight(90);
+  cgListWidget->setSelectionMode(QAbstractItemView::NoSelection);
+  cgListWidget->setStyleSheet(u"font-size: small;"_s);
+  const QPointer<QListWidget> cgListPtr(cgListWidget);
+  const auto refreshCgList = [cgListPtr]() {
+    if (!cgListPtr) return;  // widget was destroyed
+    cgListPtr->clear();
+    for (const auto& cg : MOPlugin::pluginINI().customGroups()) {
+      const QString label = cg.recordTypes.isEmpty()
+          ? u"★ %1  →  %2"_s.arg(cg.name, cg.zone)
+          : u"★ %1  →  %2  [%3 ≥%4%]"_s.arg(
+                cg.name, cg.zone, cg.recordTypes.join(u','_s),
+                QString::number(cg.threshold));
+      cgListPtr->addItem(label);
+    }
+    if (cgListPtr->count() == 0) {
+      auto* empty = new QListWidgetItem(
+          QObject::tr("No custom groups defined yet."), cgListPtr.data());
+      empty->setForeground(Qt::gray);
+    }
+  };
+  refreshCgList();
+  cgLay->addWidget(cgListWidget);
+
+  auto* manageBtn = new QPushButton(tr("Open Group Manager…"), cgGroup);
+  manageBtn->setToolTip(
+      tr("Manage all plugin groups, create custom groups, and assign plugins "
+         "by dragging or selecting."));
+  connect(manageBtn, &QPushButton::clicked, page, [this, refreshCgList]() {
+    auto* dlg = new GroupManagerDialog(m_PluginList, m_PluginListModel, this);
+    dlg->setAttribute(Qt::WA_DeleteOnClose);
+    connect(dlg, &QDialog::finished, page, [refreshCgList]{ refreshCgList(); });
+    dlg->show();
+  });
+  cgLay->addWidget(manageBtn);
+  vbox->addWidget(cgGroup);
+
   // ---- Updates ----
   auto* updGroup = new QGroupBox(tr("Updates"), page);
   auto* updForm  = new QFormLayout(updGroup);
-  auto* nexusEdit = new QLineEdit(ini.skipVersion().isEmpty()
-                                      ? QStringLiteral("https://www.nexusmods.com/")
-                                      : ini.skipVersion(),
-                                  updGroup);
-  nexusEdit->setPlaceholderText(tr("Nexus Mods page URL"));
+  auto* nexusEdit = new QLineEdit(
+      ini.nexusUrl().isEmpty() ? QStringLiteral("https://www.nexusmods.com/")
+                               : ini.nexusUrl(),
+      updGroup);
+  nexusEdit->setPlaceholderText(tr("Nexus Mods page URL for this plugin"));
+  nexusEdit->setToolTip(
+      tr("When an update is found, open this URL instead of GitHub releases."));
+  connect(nexusEdit, &QLineEdit::textChanged, updGroup, [&ini](const QString& t) {
+    ini.setNexusUrl(t.trimmed());
+  });
   updForm->addRow(tr("Nexus URL:"), nexusEdit);
 
   auto* checkNowBtn = new QPushButton(tr("Check for update now"), updGroup);
@@ -1863,6 +1985,59 @@ QWidget* PluginsWidget::buildSettingsTab(QWidget* parent)
   aboutLabel->setOpenExternalLinks(true);
   aboutLabel->setAlignment(Qt::AlignCenter);
   vbox->addWidget(aboutLabel);
+
+  // ---- .bs Generator ----
+  auto* bsGroup = new QGroupBox(tr("Mod Author Tools"), page);
+  auto* bsLay   = new QVBoxLayout(bsGroup);
+  auto* bsInfo  = new QLabel(
+      tr("Create a <code>.bs</code> hint file that tells BSPlugins which group "
+         "a plugin belongs to. Ship it alongside the plugin in your mod archive."),
+      bsGroup);
+  bsInfo->setWordWrap(true);
+  bsInfo->setStyleSheet(u"color: gray; font-size: small;"_s);
+  bsLay->addWidget(bsInfo);
+
+  auto* bsGenBtn = new QPushButton(tr("Generate .bs file for selected plugin…"), bsGroup);
+  bsGenBtn->setToolTip(
+      tr("Creates PluginName.esp.bs in the mod's folder. Opens in your text "
+         "editor so you can set the group name and zone."));
+  connect(bsGenBtn, &QPushButton::clicked, page, [this]() {
+    const auto sel = ui->pluginList->selectionModel()->selectedIndexes();
+    if (sel.isEmpty()) {
+      QMessageBox::information(this, tr("Generate .bs"),
+                               tr("Select a plugin in the list first."));
+      return;
+    }
+    const auto* plugin = m_PluginList->getPlugin(
+        sel.first().data(PluginListModel::IndexRole).toInt());
+    if (!plugin) return;
+
+    // Find the mod origin folder
+    const QString origin = m_PluginList->getOriginName(
+        m_PluginList->getIndex(plugin->name()));
+    const auto* mod = m_Organizer->modList()->getMod(origin);
+    const QString modPath = mod ? mod->absolutePath() : QString();
+
+    QString bsPath;
+    if (!modPath.isEmpty()) {
+      bsPath = modPath + QStringLiteral("/") + plugin->name() + QStringLiteral(".bs");
+    } else {
+      bsPath = QDir::homePath() + QStringLiteral("/") + plugin->name() + QStringLiteral(".bs");
+    }
+
+    if (!QFile::exists(bsPath)) {
+      QFile f(bsPath);
+      if (f.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream ts(&f);
+        ts << "group=Your Group Name\n";
+        ts << "zone=Visuals\n";
+        ts << "# Zones: Visuals, World Changes, Gameplay, NPCs & Content, Frameworks\n";
+      }
+    }
+    QDesktopServices::openUrl(QUrl::fromLocalFile(bsPath));
+  });
+  bsLay->addWidget(bsGenBtn);
+  vbox->addWidget(bsGroup);
 
   vbox->addStretch();
   return page;

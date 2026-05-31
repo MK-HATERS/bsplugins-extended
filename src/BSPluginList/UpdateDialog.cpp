@@ -129,7 +129,12 @@ UpdateDialog::UpdateDialog(const QString& latestVersion,
 
 void UpdateDialog::openGitHub()
 {
-  QDesktopServices::openUrl(QUrl(m_DownloadUrl));
+  // Prefer user-configured Nexus URL over GitHub releases
+  const QString nexus = MOPlugin::pluginINI().nexusUrl();
+  const QString url   = (!nexus.isEmpty() && nexus != QStringLiteral("https://www.nexusmods.com/"))
+                            ? nexus
+                            : m_DownloadUrl;
+  QDesktopServices::openUrl(QUrl(url));
 }
 
 void UpdateDialog::downloadAndInstall()

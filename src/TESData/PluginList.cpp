@@ -1164,6 +1164,36 @@ static void checkIni(TESData::FileInfo& info,
   }
 }
 
+// Parse a .bs hint file.  Called from the async scan task with the
+// resolved file path.  Format (plain text, UTF-8):
+//   Single line with no '=' → the group name
+//   Key=value lines         → group=<name> and/or zone=<name>
+static void readBsHint(TESData::FileInfo& info, const QString& bsFilePath)
+{
+  QFile f(bsFilePath);
+  if (!f.open(QIODevice::ReadOnly)) return;
+  const QString content = QString::fromUtf8(f.readAll()).trimmed();
+  f.close();
+
+  if (content.contains(u'=')) {
+    // Manual parse: QSettings requires [Section] headers; .bs files don't have them.
+    QString group, zone;
+    for (const QString& raw : content.split(u'\n')) {
+      const QString line = raw.trimmed();
+      if (line.startsWith(u'#')) continue;  // comment
+      const int eq = line.indexOf(u'=');
+      if (eq <= 0) continue;
+      const QString key = line.left(eq).trimmed().toLower();
+      const QString val = line.mid(eq + 1).trimmed();
+      if (key == u"group"_s) group = val;
+      else if (key == u"zone"_s)  zone  = val;
+    }
+    if (!group.isEmpty()) info.setBsHint(group, zone);
+  } else if (!content.isEmpty()) {
+    info.setBsHint(content, QString());  // single-line = group name only
+  }
+}
+
 static void assignConsecutivePriorities(std::vector<std::shared_ptr<FileInfo>>& plugins)
 {
   boost::container::flat_multimap<int, int> priorityToId;
@@ -1314,6 +1344,11 @@ void PluginList::scanDataFiles(bool invalidate)
       } catch (const std::exception& e) {
         MOBase::log::error("Error parsing \"{}\": {}", path, e.what());
       }
+
+      // Read .bs hint in the same task that writes all other FileInfo fields
+      // to avoid a data race with assocTask accessing the same FileInfo object.
+      const QString bsPath = m_Organizer->resolvePath(filename + u".bs"_s);
+      if (!bsPath.isEmpty()) readBsHint(*info, bsPath);
 
       smph.release();
     });

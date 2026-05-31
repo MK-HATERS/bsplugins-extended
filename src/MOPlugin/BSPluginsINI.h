@@ -64,9 +64,26 @@ public:
   // ---- Update tracking ----------------------------------------------------
   [[nodiscard]] QString skipVersion()           const;
   [[nodiscard]] QString lastCheckTimestamp()    const;
+  [[nodiscard]] QString nexusUrl()              const;
 
   void setSkipVersion(const QString& v);
   void setLastCheckTimestamp(const QString& v);
+  void setNexusUrl(const QString& v);
+
+  // ---- Custom groups -------------------------------------------------------
+  // Each custom group maps to a zone and optional record-type filter.
+  struct CustomGroup
+  {
+    QString name;
+    QString zone;                // zone name as shown in Settings
+    QStringList recordTypes;     // 4-char codes, empty = no record filter
+    int     threshold = 15;      // minimum % of matching records
+  };
+
+  [[nodiscard]] QList<CustomGroup> customGroups() const;
+  void setCustomGroups(const QList<CustomGroup>& groups);
+  void addCustomGroup(const CustomGroup& g);
+  void removeCustomGroup(const QString& name);
 
   // ---- Plugin lifecycle state (first run, version seen) -------------------
   [[nodiscard]] bool    firstRunDone()          const;
@@ -77,9 +94,13 @@ public:
 
 private:
   void migrate(int fromSchema);
+  void invalidateCustomGroupCache() { m_CustomGroupsCached = false; }
 
   QSettings* m_Settings          = nullptr;
   bool       m_GroupNamesMigrated = false;
+
+  mutable bool              m_CustomGroupsCached = false;
+  mutable QList<CustomGroup> m_CustomGroupsCache;
 };
 
 // Global singleton — init once in BSPlugins::initPlugin()

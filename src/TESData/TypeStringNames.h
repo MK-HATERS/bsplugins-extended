@@ -555,6 +555,15 @@ inline constexpr QStringView getDefaultObjectName(TESFile::Type type)
   return find(DefaultObjectNames, type);
 }
 
+// Convenience for the custom group dialog — lookup by 4-char code string.
+inline QString formTypeName(const QString& code)
+{
+  if (code.size() != 4) return code;
+  const TESFile::Type t(code.toLatin1().constData());
+  const QStringView sv = getFormName(t);
+  return sv.isEmpty() ? code : sv.toString();
+}
+
 }  // namespace TESData
 
 #endif  // TESDATA_FORMNAMES_H

@@ -1,5 +1,8 @@
 #include "BSPluginsLog.h"
 
+#include <QColor>
+#include <QIcon>
+
 using namespace Qt::Literals::StringLiterals;
 
 namespace BSPluginList
@@ -14,7 +17,8 @@ BSPluginsLog& BSPluginsLog::instance()
 void BSPluginsLog::add(LogEntry::Level level, const QString& message,
                        const QString& plugin)
 {
-  beginInsertRows({}, m_Entries.size(), m_Entries.size());
+  const int newRow = static_cast<int>(m_Entries.size());
+  beginInsertRows({}, newRow, newRow);
   m_Entries.push_back({level, plugin, message, QDateTime::currentDateTime()});
   endInsertRows();
 }
@@ -46,7 +50,7 @@ int BSPluginsLog::rowCount(const QModelIndex& parent) const
 
 QVariant BSPluginsLog::data(const QModelIndex& index, int role) const
 {
-  if (!index.isValid() || index.row() >= m_Entries.size()) return {};
+  if (!index.isValid() || index.row() >= static_cast<int>(m_Entries.size())) return {};
   const auto& e = m_Entries.at(index.row());
 
   switch (role) {

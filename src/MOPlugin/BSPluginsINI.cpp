@@ -220,6 +220,74 @@ void BSPluginsINI::setLastCheckTimestamp(const QString& v)
 {
   m_Settings->setValue(u"Updates/last_check"_s,    v); m_Settings->sync();
 }
+QString BSPluginsINI::nexusUrl() const
+{
+  return m_Settings->value(u"Updates/nexus_url"_s, QString()).toString();
+}
+void BSPluginsINI::setNexusUrl(const QString& v)
+{
+  m_Settings->setValue(u"Updates/nexus_url"_s, v); m_Settings->sync();
+}
+
+// ---------------------------------------------------------------------------
+// Custom groups
+// ---------------------------------------------------------------------------
+
+QList<BSPluginsINI::CustomGroup> BSPluginsINI::customGroups() const
+{
+  if (m_CustomGroupsCached) return m_CustomGroupsCache;
+
+  m_CustomGroupsCache.clear();
+  const int count = m_Settings->value(u"CustomGroups/count"_s, 0).toInt();
+  for (int i = 0; i < count; ++i) {
+    const QString section = u"CustomGroup_%1"_s.arg(i);
+    CustomGroup g;
+    g.name        = m_Settings->value(u"%1/name"_s.arg(section)).toString();
+    g.zone        = m_Settings->value(u"%1/zone"_s.arg(section)).toString();
+    g.recordTypes = m_Settings->value(u"%1/records"_s.arg(section))
+                        .toString().split(u','_s, Qt::SkipEmptyParts);
+    g.threshold   = m_Settings->value(u"%1/threshold"_s.arg(section), 15).toInt();
+    if (!g.name.isEmpty()) m_CustomGroupsCache.append(std::move(g));
+  }
+  m_CustomGroupsCached = true;
+  return m_CustomGroupsCache;
+}
+
+void BSPluginsINI::setCustomGroups(const QList<CustomGroup>& groups)
+{
+  // Remove all existing custom group sections
+  const int old = m_Settings->value(u"CustomGroups/count"_s, 0).toInt();
+  for (int i = 0; i < old; ++i) {
+    m_Settings->remove(u"CustomGroup_%1"_s.arg(i));
+  }
+
+  m_Settings->setValue(u"CustomGroups/count"_s, groups.size());
+  for (int i = 0; i < groups.size(); ++i) {
+    const QString s = u"CustomGroup_%1"_s.arg(i);
+    m_Settings->setValue(u"%1/name"_s.arg(s),      groups.at(i).name);
+    m_Settings->setValue(u"%1/zone"_s.arg(s),      groups.at(i).zone);
+    m_Settings->setValue(u"%1/records"_s.arg(s),   groups.at(i).recordTypes.join(u','_s));
+    m_Settings->setValue(u"%1/threshold"_s.arg(s), groups.at(i).threshold);
+  }
+  m_Settings->sync();
+  invalidateCustomGroupCache();
+}
+
+void BSPluginsINI::addCustomGroup(const CustomGroup& g)
+{
+  auto list = customGroups();
+  list.append(g);
+  setCustomGroups(list);
+}
+
+void BSPluginsINI::removeCustomGroup(const QString& name)
+{
+  auto list = customGroups();
+  list.erase(std::remove_if(list.begin(), list.end(),
+                            [&](const CustomGroup& g) { return g.name == name; }),
+             list.end());
+  setCustomGroups(list);
+}
 
 // ---------------------------------------------------------------------------
 // Lifecycle state

@@ -79,6 +79,15 @@ public:
     bool  hasInvalidFormIds   = false;
     int   interiorCellCount   = 0;
     float headerVersion       = -1.0f;
+    // Mod-author .bs file hint (empty = no hint)
+    QString bsGroupHint;
+    QString bsZoneHint;
+    // Cached classification result (computed lazily, invalidated on priority change)
+    mutable bool        classificationCached = false;
+    mutable int         cachedZone           = 7; // PluginZone::Unknown
+    mutable int         cachedConfidence      = 0;
+    mutable QString     cachedGroupName;
+    mutable QString     cachedReason;
 
     // Record type histogram built during conflict scanning.
     // Key = 4-byte record type (ARMO, LIGH, NPC_, etc.), value = count.
@@ -171,6 +180,16 @@ public:
   [[nodiscard]] float headerVersion() const { return m_Metadata.headerVersion; }
   void setHeaderVersion(float value) { m_Metadata.headerVersion = value; }
 
+  // Mod-author .bs hint — highest priority in classification
+  [[nodiscard]] const QString& bsGroupHint() const { return m_Metadata.bsGroupHint; }
+  [[nodiscard]] const QString& bsZoneHint()  const { return m_Metadata.bsZoneHint; }
+  void setBsHint(const QString& group, const QString& zone)
+  {
+    m_Metadata.bsGroupHint = group;
+    m_Metadata.bsZoneHint  = zone;
+  }
+  [[nodiscard]] bool hasBsHint() const { return !m_Metadata.bsGroupHint.isEmpty(); }
+
   [[nodiscard]] const auto& masters() const { return m_Metadata.masters; }
   void addMaster(const QString& master) { m_Metadata.masters.push_back(master); }
 
@@ -195,6 +214,7 @@ public:
   {
     m_State.priority = priority;
     m_Conflicts.invalidate();
+    m_Metadata.classificationCached = false;  // group zone may change with priority
   }
   [[nodiscard]] const QString& index() const { return m_State.index; }
   void setIndex(const QString& index) { m_State.index = index; }
