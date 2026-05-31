@@ -106,6 +106,9 @@ PluginsWidget::PluginsWidget(MOBase::IOrganizer* organizer,
       infoLay->addWidget(infoHint);
       infoLay->addWidget(m_InfoBrowser, 1);
       innerTabs->addTab(infoPage, tr("Info"));
+      innerTabs->setTabToolTip(0,
+          tr("Details for the selected plugin: type, classification, what it "
+             "overrides, what overrides it, inferred patch target."));
 
       // Sync Info tab when selection changes in the plugin list
       connect(ui->pluginList->selectionModel(),
@@ -180,11 +183,17 @@ PluginsWidget::PluginsWidget(MOBase::IOrganizer* organizer,
       logLay->addWidget(logView, 1);
 
       innerTabs->addTab(logPage, tr("Log"));
+      innerTabs->setTabToolTip(1,
+          tr("BSPlugins-only messages: warnings, classification decisions, "
+             "update check results. Nothing is written to MO2's main log."));
 
       // ── Tab 3: Settings ───────────────────────────────────────────────
       // Inline settings backed by BSPluginsINI — no separate dialog needed.
       auto* settingsPage = buildSettingsTab(innerTabs);
       innerTabs->addTab(settingsPage, tr("Settings"));
+      innerTabs->setTabToolTip(2,
+          tr("Configure group names, patch detection threshold, update URL. "
+             "Changes save immediately to settings.ini and survive plugin updates."));
 
       // Plugin list above (stretches), supplementary panel below (fixed start)
       auto* splitter = new QSplitter(Qt::Vertical, this);
@@ -196,6 +205,44 @@ PluginsWidget::PluginsWidget(MOBase::IOrganizer* organizer,
       splitter->setHandleWidth(5);
 
       rootLayout->addWidget(splitter);
+    }
+  }
+
+  // Update Sort button tooltip to explain two-path workflow
+  ui->sortButton->setToolTip(
+      tr("<b>LOOT Sort</b> — Full load order sort using LOOT's masterlist rules.<br><br>"
+         "Use this when:<br>"
+         "• You've added many mods at once<br>"
+         "• Your load order needs a full reset<br>"
+         "• You haven't sorted in a while<br><br>"
+         "<i>For just a few new mods, use the <b>Patch Sort</b> button instead.</i>"));
+
+  // Patch Sort button: quick inferred-ordering pass without running LOOT
+  auto* patchSortBtn = new QPushButton(tr("Patch Sort"), this);
+  patchSortBtn->setToolTip(
+      tr("<b>Patch Sort</b> — Quickly reorder patches after adding a few mods.<br><br>"
+         "Use this when:<br>"
+         "• You've added 1–5 new mods<br>"
+         "• Your existing load order is already good<br>"
+         "• You just want new patches placed correctly<br><br>"
+         "Detects mods overriding records from another without declaring it as a "
+         "master, then moves them to load after their target.<br><br>"
+         "<i>For a full re-sort, use the <b>Sort</b> (LOOT) button.</i>"));
+  patchSortBtn->setVisible(Settings::instance()->enableSortButton());
+  connect(patchSortBtn, &QPushButton::clicked, this, [this]() {
+    m_PluginListModel->applyInferredOrdering();
+    bsLog(tr("Patch Sort complete."));
+  });
+
+  // Insert Patch Sort next to the Sort button in the toolbar
+  if (auto* toolLayout = ui->sortButton->parentWidget()
+                             ? ui->sortButton->parentWidget()->layout()
+                             : nullptr) {
+    const int sortIdx = toolLayout->indexOf(ui->sortButton);
+    if (sortIdx >= 0) {
+      if (auto* hbox = qobject_cast<QHBoxLayout*>(toolLayout)) {
+        hbox->insertWidget(sortIdx + 1, patchSortBtn);
+      }
     }
   }
 
@@ -807,30 +854,21 @@ void PluginsWidget::showGroupReviewDialog()
           .toStringList();
   const bool hasPreviousRun = !reviewed.isEmpty();
 
-  // If this is a re-run, ask: review new additions only or everything?
-  bool newOnly = false;
+  // After LOOT sort always show the full dialog — no pre-prompt.
+  // For re-runs after adding a few mods, use Patch Sort button instead.
+  // Only skip entirely if there's truly nothing new to suggest.
+  const bool newOnly = false;  // always full review after LOOT sort
   if (hasPreviousRun) {
-    const int newCount = [&]() {
-      int n = 0;
-      for (int i = 0; i < pluginCount; ++i) {
-        if (const auto* p = m_PluginList->getPlugin(i)) {
-          if (!reviewed.contains(p->name(), Qt::CaseInsensitive)) ++n;
-        }
-      }
-      return n;
-    }();
-
+    // Count new plugins to surface a log hint, but don't gate the dialog
+    const int newCount = std::ranges::count_if(
+        std::views::iota(0, pluginCount), [&](int i) {
+          const auto* p = m_PluginList->getPlugin(i);
+          return p && !reviewed.contains(p->name(), Qt::CaseInsensitive);
+        });
     if (newCount > 0) {
-      const auto choice = QMessageBox::question(
-          topLevelWidget(), tr("Review Load Order"),
-          tr("You have <b>%1 new plugin(s)</b> since your last review.<br><br>"
-             "Would you like to review new additions only, or do a full review?")
-              .arg(newCount),
-          tr("New additions only"), tr("Full review"), tr("Skip"), 0, 2);
-      if (choice == 2) return;  // Skip
-      newOnly = (choice == 0);
+      bsLog(tr("LOOT sort: %1 new plugin(s) since last review.").arg(newCount));
     } else {
-      return;  // Nothing new — skip dialog entirely
+      return;  // Nothing new at all — skip dialog
     }
   }
 

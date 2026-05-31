@@ -100,9 +100,16 @@ void PluginListContextMenu::addAllItemsMenu()
 
   allItemsMenu->addSeparator();
 
-  allItemsMenu->addAction(tr("Fix Patch Load Order"), [this]() {
-    m_Model->applyInferredOrdering();
-  });
+  {
+    auto* fixPatchAction = allItemsMenu->addAction(tr("Fix Patch Load Order"), [this]() {
+      m_Model->applyInferredOrdering();
+    });
+    fixPatchAction->setToolTip(
+        tr("Quickly reorder mods that appear to patch other mods "
+           "(overriding records without declaring them as masters). "
+           "Use after adding a few new mods instead of a full LOOT sort."));
+    fixPatchAction->setStatusTip(fixPatchAction->toolTip());
+  }
 
   allItemsMenu->addSeparator();
 
