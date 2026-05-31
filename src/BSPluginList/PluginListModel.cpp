@@ -2,6 +2,8 @@
 #include "MOPlugin/Settings.h"
 #include "PluginListDropInfo.h"
 
+using namespace Qt::Literals::StringLiterals;
+
 #include <QGuiApplication>
 #include <QMimeData>
 
@@ -384,10 +386,9 @@ QVariant PluginListModel::tooltipData(const QModelIndex& index) const
       const QString prefix = m_Plugins->blueprintPrefix();
       if (!prefix.isEmpty() && baseName.startsWith(prefix, Qt::CaseInsensitive)) {
         const QString mainBase = baseName.mid(prefix.length());
-        // MSVC doesn't support range-for over braced initializer_list<QString>
-        const auto* paired = m_Plugins->getPluginByName(mainBase + u".esm"_s);
-        if (!paired) paired = m_Plugins->getPluginByName(mainBase + u".esp"_s);
-        if (!paired) paired = m_Plugins->getPluginByName(mainBase + u".esl"_s);
+        const auto* paired = m_Plugins->getPluginByName(mainBase + QStringLiteral(".esm"));
+        if (!paired) paired = m_Plugins->getPluginByName(mainBase + QStringLiteral(".esp"));
+        if (!paired) paired = m_Plugins->getPluginByName(mainBase + QStringLiteral(".esl"));
         if (paired) {
           toolTip += "<br><b>" + tr("Main plugin") + "</b>: " + paired->name();
         }
@@ -397,7 +398,7 @@ QVariant PluginListModel::tooltipData(const QModelIndex& index) const
       const QString prefix = m_Plugins->blueprintPrefix();
       if (!prefix.isEmpty()) {
         const QString blueprintName =
-            prefix + QFileInfo(plugin->name()).completeBaseName() + u".esm"_s;
+            prefix + QFileInfo(plugin->name()).completeBaseName() + QStringLiteral(".esm");
         if (const auto* paired = m_Plugins->getPluginByName(blueprintName)) {
           toolTip +=
               "<br><b>" + tr("Blueprint counterpart") + "</b>: " + paired->name();

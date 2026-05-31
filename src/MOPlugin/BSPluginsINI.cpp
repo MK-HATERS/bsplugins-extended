@@ -107,11 +107,6 @@ void BSPluginsINI::migrate(int fromSchema)
 // Group names
 // ---------------------------------------------------------------------------
 
-#define GROUP_NAMES_READ(key, def) \
-  return m_Settings->value(u"GroupNames/" key "_s, u" def "_s).toString()
-#define GROUP_NAMES_WRITE(key) \
-  m_Settings->setValue(u"GroupNames/" key "_s, v); m_Settings->sync()
-
 QString BSPluginsINI::groupNamePatches()    const
 {
   return m_Settings->value(u"GroupNames/patches"_s,       u"Patches"_s).toString();
