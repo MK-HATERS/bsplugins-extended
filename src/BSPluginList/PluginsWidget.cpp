@@ -6,10 +6,11 @@
 #include "GUI/SelectionDialog.h"
 #include "MOPlugin/Settings.h"
 #include "BSPluginsLog.h"
+#include "BSPluginsLog.h"
 #include "GroupReviewDialog.h"
 #include "MOPlugin/BSPlugins.h"
 #include "MOPlugin/BSPluginsINI.h"
-#include "PluginSettingsDialog.h"
+#include "TESData/PluginClassifier.h"
 #include "UpdateChecker.h"
 #include "UpdateDialog.h"
 #include "WelcomeDialog.h"
@@ -29,11 +30,15 @@
 #include <QDate>
 #include <QHBoxLayout>
 #include <QIcon>
+#include <QFormLayout>
 #include <QLabel>
+#include <QLineEdit>
 #include <QListView>
 #include <QPushButton>
 #include <QSortFilterProxyModel>
+#include <QSpinBox>
 #include <QSplitter>
+#include <QTextBrowser>
 #include <QVBoxLayout>
 #include <QInputDialog>
 #include <QMenu>
@@ -69,114 +74,120 @@ PluginsWidget::PluginsWidget(MOBase::IOrganizer* organizer,
   optionsMenu = listOptionsMenu();
   ui->listOptionsBtn->setMenu(optionsMenu);
 
-  // ---- Log panel: collapsible strip at the bottom of the plugin list ----
-  // Inject a QSplitter into the root QVBoxLayout so the log sits below the
-  // plugin list view without touching the toolbar row.
+  // ---- Internal tab widget: Plugins / Info / Log / Settings ----
+  // The .ui wraps pluginList+filter in "pluginsContainer" so we can lift
+  // the whole thing into the first tab with one call.
   {
-    auto* rootLayout = qobject_cast<QVBoxLayout*>(layout());
-    if (rootLayout) {
-      // Find the plugin list widget (last item before we add anything)
-      // and replace it with a splitter containing the list + log panel.
-      const int listIdx = rootLayout->count() - 1;
-      auto* listItem    = rootLayout->itemAt(listIdx);
-      if (listItem && listItem->widget()) {
-        QWidget* listWidget = listItem->widget();
-        rootLayout->removeWidget(listWidget);
+    auto* rootLayout      = qobject_cast<QVBoxLayout*>(layout());
+    auto* pluginsContainer = findChild<QWidget*>(u"pluginsContainer"_s);
 
-        auto* splitter = new QSplitter(Qt::Vertical, this);
-        splitter->addWidget(listWidget);
+    if (rootLayout && pluginsContainer) {
+      rootLayout->removeWidget(pluginsContainer);
 
-        // ---- Log panel widget ----
-        auto* logPanel = new QWidget(splitter);
-        auto* logVBox  = new QVBoxLayout(logPanel);
-        logVBox->setContentsMargins(0, 0, 0, 0);
-        logVBox->setSpacing(2);
+      auto* innerTabs = new QTabWidget(this);
+      innerTabs->setDocumentMode(true);   // flush with panel edge, no border
 
-        // Header row: title + filter buttons + clear
-        auto* logHeader = new QWidget(logPanel);
-        auto* logHBox   = new QHBoxLayout(logHeader);
-        logHBox->setContentsMargins(4, 2, 4, 2);
+      // ── Tab 0: Plugins ────────────────────────────────────────────────
+      innerTabs->addTab(pluginsContainer, tr("Plugins"));
 
-        auto* logTitle = new QLabel(tr("BSPlugins Log"), logHeader);
-        logTitle->setStyleSheet(u"font-weight: bold; font-size: small;"_s);
-        logHBox->addWidget(logTitle);
-        logHBox->addStretch();
+      // ── Tab 1: Info ───────────────────────────────────────────────────
+      // Shows conflict/classification details for the selected plugin.
+      // Syncs via the pluginList selection model.
+      auto* infoPage = new QWidget(innerTabs);
+      auto* infoLay  = new QVBoxLayout(infoPage);
+      infoLay->setContentsMargins(4, 4, 4, 4);
+      infoLay->setSpacing(4);
 
-        // Filter proxy for the log view
-        auto* logProxy = new QSortFilterProxyModel(this);
-        logProxy->setSourceModel(&BSPluginsLog::instance());
-        logProxy->setFilterRole(BSPluginsLog::LevelRole);
+      auto* infoHint = new QLabel(
+          tr("Select a plugin in the Plugins tab to see details here."), infoPage);
+      infoHint->setAlignment(Qt::AlignCenter);
+      infoHint->setWordWrap(true);
+      infoHint->setStyleSheet(u"color: gray;"_s);
 
-        auto makeFilterBtn = [&](const QString& text, int minLevel) {
-          auto* btn = new QPushButton(text, logHeader);
-          btn->setCheckable(true);
-          btn->setFlat(true);
-          btn->setFixedHeight(18);
-          btn->setStyleSheet(u"font-size: small; padding: 0 4px;"_s);
-          connect(btn, &QPushButton::toggled, this, [logProxy, minLevel](bool on) {
-            if (on) {
-              logProxy->setFilterRegularExpression(
-                  QString::number(minLevel) + u"|" +
-                  QString::number(minLevel + 1));
-            } else {
-              logProxy->setFilterRegularExpression(QString());
-            }
-          });
-          return btn;
-        };
-        logHBox->addWidget(makeFilterBtn(tr("⚠ Warnings"),  1));
-        logHBox->addWidget(makeFilterBtn(tr("✕ Critical"),  2));
+      m_InfoBrowser = new QTextBrowser(infoPage);
+      m_InfoBrowser->setOpenLinks(false);
+      m_InfoBrowser->hide();
 
-        auto* clearBtn = new QPushButton(tr("Clear"), logHeader);
-        clearBtn->setFlat(true);
-        clearBtn->setFixedHeight(18);
-        clearBtn->setStyleSheet(u"font-size: small; padding: 0 4px;"_s);
-        connect(clearBtn, &QPushButton::clicked, &BSPluginsLog::instance(),
-                &BSPluginsLog::clear);
-        logHBox->addWidget(clearBtn);
+      infoLay->addWidget(infoHint);
+      infoLay->addWidget(m_InfoBrowser, 1);
+      innerTabs->addTab(infoPage, tr("Info"));
 
-        logVBox->addWidget(logHeader);
+      // Sync Info tab when selection changes in the plugin list
+      connect(ui->pluginList->selectionModel(),
+              &QItemSelectionModel::selectionChanged,
+              this, [this, infoHint](const QItemSelection& sel, const QItemSelection&) {
+                if (sel.isEmpty()) {
+                  m_InfoBrowser->hide();
+                  infoHint->show();
+                  return;
+                }
+                const int row = sel.indexes().first().row();
+                const auto* plugin = m_PluginList->getPlugin(
+                    ui->pluginList->model()
+                        ->data(sel.indexes().first(), PluginListModel::IndexRole)
+                        .toInt());
+                if (!plugin) return;
+                infoHint->hide();
+                m_InfoBrowser->show();
+                refreshInfoTab(plugin);
+              });
 
-        auto* logView = new QListView(logPanel);
-        logView->setModel(logProxy);
-        logView->setAlternatingRowColors(true);
-        logView->setSelectionMode(QAbstractItemView::SingleSelection);
-        logView->setUniformItemSizes(true);
-        logView->setWordWrap(false);
-        logView->setStyleSheet(u"font-size: small;"_s);
-        logVBox->addWidget(logView);
+      // ── Tab 2: Log ────────────────────────────────────────────────────
+      auto* logPage = new QWidget(innerTabs);
+      auto* logLay  = new QVBoxLayout(logPage);
+      logLay->setContentsMargins(2, 2, 2, 2);
+      logLay->setSpacing(2);
 
-        splitter->addWidget(logPanel);
+      // Filter toolbar
+      auto* logToolbar = new QWidget(logPage);
+      auto* logTbar    = new QHBoxLayout(logToolbar);
+      logTbar->setContentsMargins(0, 0, 0, 0);
 
-        // Start with log panel collapsed (height 0)
-        splitter->setSizes({10000, 0});
-        splitter->setCollapsible(1, true);
-        splitter->setHandleWidth(6);
+      auto* logProxy = new QSortFilterProxyModel(this);
+      logProxy->setSourceModel(&BSPluginsLog::instance());
+      logProxy->setFilterRole(BSPluginsLog::LevelRole);
 
-        rootLayout->insertWidget(listIdx, splitter);
+      for (auto [label, minLvl] : {
+               std::pair{tr("All"),      -1},
+               std::pair{tr("⚠ Warn"),   static_cast<int>(LogEntry::Level::Warning)},
+               std::pair{tr("✕ Crit"),   static_cast<int>(LogEntry::Level::Critical)},
+           }) {
+        auto* btn = new QPushButton(label, logToolbar);
+        btn->setCheckable(true);
+        btn->setFlat(true);
+        const int lvl = minLvl;
+        connect(btn, &QPushButton::toggled, this, [logProxy, lvl](bool on) {
+          if (!on) return;
+          if (lvl < 0) {
+            logProxy->setFilterRegularExpression(QString());
+          } else {
+            logProxy->setFilterRegularExpression(QString::number(lvl));
+          }
+        });
+        logTbar->addWidget(btn);
       }
-    }
-  }
+      logTbar->addStretch();
+      auto* clearBtn = new QPushButton(tr("Clear"), logToolbar);
+      clearBtn->setFlat(true);
+      connect(clearBtn, &QPushButton::clicked, &BSPluginsLog::instance(),
+              &BSPluginsLog::clear);
+      logTbar->addWidget(clearBtn);
+      logLay->addWidget(logToolbar);
 
-  // Settings gear button — opens BSPlugins settings dialog (not MO2's global one)
-  auto* settingsBtn = new QPushButton(
-      QIcon(u":/MO/gui/settings"_s), QString(), this);
-  settingsBtn->setToolTip(tr("BSPlugins Extended settings — group names, classification"));
-  settingsBtn->setFlat(true);
-  settingsBtn->setFixedSize(24, 24);
-  connect(settingsBtn, &QPushButton::clicked, this, [this]() {
-    PluginSettingsDialog dlg(this);
-    dlg.exec();
-  });
-  // Insert next to the list options button
-  if (auto* lay = ui->listOptionsBtn->parentWidget()
-                      ? ui->listOptionsBtn->parentWidget()->layout()
-                      : nullptr) {
-    const int idx = lay->indexOf(ui->listOptionsBtn);
-    if (idx >= 0) {
-      if (auto* box = qobject_cast<QHBoxLayout*>(lay)) {
-        box->insertWidget(idx + 1, settingsBtn);
-      }
+      auto* logView = new QListView(logPage);
+      logView->setModel(logProxy);
+      logView->setAlternatingRowColors(true);
+      logView->setSelectionMode(QAbstractItemView::SingleSelection);
+      logLay->addWidget(logView, 1);
+
+      innerTabs->addTab(logPage, tr("Log"));
+
+      // ── Tab 3: Settings ───────────────────────────────────────────────
+      // Inline settings backed by BSPluginsINI — no separate dialog needed.
+      auto* settingsPage = buildSettingsTab(innerTabs);
+      innerTabs->addTab(settingsPage, tr("Settings"));
+
+      rootLayout->addWidget(innerTabs);
     }
   }
 
@@ -1609,6 +1620,185 @@ void PluginsWidget::synchronizePluginLists(MOBase::IOrganizer* organizer)
                                            state == MOBase::IPluginList::STATE_ACTIVE);
         }
       });
+}
+
+// ---------------------------------------------------------------------------
+// Info tab: rich text overview for the currently selected plugin.
+// Synced from the plugin list's selection model.
+// ---------------------------------------------------------------------------
+void PluginsWidget::refreshInfoTab(const TESData::FileInfo* plugin)
+{
+  if (!plugin || !m_InfoBrowser) return;
+
+  const int id = m_PluginList->getIndex(plugin->name());
+
+  QString html = u"<h3>%1</h3>"_s.arg(plugin->name());
+
+  // Origin mod
+  const QString origin = m_PluginList->getOriginName(id);
+  if (!origin.isEmpty()) {
+    html += u"<b>%1</b>: %2<br>"_s.arg(tr("Mod"), origin);
+  }
+
+  // Type flags
+  QStringList types;
+  if (plugin->isMasterFlagged() || plugin->hasMasterExtension()) types << u"ESM"_s;
+  if (plugin->isLightFlagged()  || plugin->hasLightExtension())  types << u"ESL"_s;
+  if (plugin->isMediumFlagged())   types << u"ESH"_s;
+  if (plugin->isOverlayFlagged())  types << u"Overlay"_s;
+  if (plugin->isBlueprintFlagged()) types << u"Blueprint"_s;
+  if (!types.isEmpty()) {
+    html += u"<b>%1</b>: %2<br>"_s.arg(tr("Type"), types.join(u", "_s));
+  }
+
+  // Classification from record analysis
+  const TESData::Classification cls =
+      TESData::classifyPlugin(*plugin, m_PluginList->blueprintPrefix());
+  if (cls.zone != TESData::PluginZone::Unknown) {
+    html += u"<b>%1</b>: %2 <i>(%3)</i><br>"_s
+                .arg(tr("Classified as"), cls.groupName, cls.reason);
+  }
+
+  // Current group
+  if (!plugin->group().isEmpty()) {
+    html += u"<b>%1</b>: %2<br>"_s.arg(tr("Group"), plugin->group());
+  }
+
+  html += u"<hr>"_s;
+
+  // Conflicts: what this plugin overrides
+  const auto& winning = plugin->getPluginOverriding();
+  if (!winning.isEmpty()) {
+    html += u"<b>%1 (%2):</b><ul>"_s.arg(tr("Overrides"), QString::number(winning.size()));
+    int shown = 0;
+    for (const int idx : winning) {
+      if (shown++ >= 10) { html += u"<li><i>…and %1 more</i></li>"_s.arg(winning.size() - 10); break; }
+      if (const auto* other = m_PluginList->getPlugin(idx)) {
+        html += u"<li>%1</li>"_s.arg(other->name());
+      }
+    }
+    html += u"</ul>"_s;
+  }
+
+  // Conflicts: what overrides this plugin
+  const auto& losing = plugin->getPluginOverridden();
+  if (!losing.isEmpty()) {
+    html += u"<b>%1 (%2):</b><ul>"_s.arg(tr("Overridden by"), QString::number(losing.size()));
+    int shown = 0;
+    for (const int idx : losing) {
+      if (shown++ >= 10) { html += u"<li><i>…and %1 more</i></li>"_s.arg(losing.size() - 10); break; }
+      if (const auto* other = m_PluginList->getPlugin(idx)) {
+        html += u"<li>%1</li>"_s.arg(other->name());
+      }
+    }
+    html += u"</ul>"_s;
+  }
+
+  // Inferred patch suggestion
+  const auto& inferred = plugin->getInferredOverrides();
+  auto maxIt = std::max_element(inferred.constBegin(), inferred.constEnd());
+  if (maxIt != inferred.constEnd() && maxIt.value() >= 3) {
+    if (const auto* target = m_PluginList->getPlugin(maxIt.key())) {
+      html += u"<b>%1</b>: %2 <i>(%3 shared records)</i><br>"_s
+                  .arg(tr("Likely patches"), target->name(),
+                       QString::number(maxIt.value()));
+    }
+  }
+
+  // Blueprint pair
+  if (plugin->isBlueprintPrefixed()) {
+    const QString prefix = m_PluginList->blueprintPrefix();
+    const QString base   = QFileInfo(plugin->name()).completeBaseName().mid(prefix.length());
+    for (const auto* ext : {".esm", ".esp", ".esl"}) {
+      if (const auto* paired = m_PluginList->getPluginByName(base + QString::fromLatin1(ext))) {
+        html += u"<b>%1</b>: %2<br>"_s.arg(tr("Main plugin"), paired->name());
+        break;
+      }
+    }
+  }
+
+  m_InfoBrowser->setHtml(html);
+}
+
+// ---------------------------------------------------------------------------
+// Settings tab: inline form backed by BSPluginsINI — no dialog needed.
+// ---------------------------------------------------------------------------
+QWidget* PluginsWidget::buildSettingsTab(QWidget* parent)
+{
+  auto& ini = MOPlugin::pluginINI();
+
+  auto* page = new QWidget(parent);
+  auto* vbox = new QVBoxLayout(page);
+  vbox->setContentsMargins(6, 6, 6, 6);
+  vbox->setSpacing(8);
+
+  // ---- Group Names ----
+  auto* namesGroup = new QGroupBox(tr("Group Names"), page);
+  auto* namesForm  = new QFormLayout(namesGroup);
+  namesForm->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+
+  auto addRow = [&](const QString& label, const QString& val,
+                    std::function<void(const QString&)> setter) {
+    auto* edit = new QLineEdit(val, namesGroup);
+    connect(edit, &QLineEdit::textChanged, page, [setter](const QString& t) {
+      if (!t.trimmed().isEmpty()) setter(t.trimmed());
+    });
+    namesForm->addRow(label, edit);
+  };
+
+  addRow(tr("Patches:"),         ini.groupNamePatches(),    [&ini](const QString& v){ ini.setGroupNamePatches(v); });
+  addRow(tr("Visuals:"),         ini.groupNameVisuals(),    [&ini](const QString& v){ ini.setGroupNameVisuals(v); });
+  addRow(tr("World Changes:"),   ini.groupNameWorld(),      [&ini](const QString& v){ ini.setGroupNameWorld(v); });
+  addRow(tr("Gameplay:"),        ini.groupNameGameplay(),   [&ini](const QString& v){ ini.setGroupNameGameplay(v); });
+  addRow(tr("NPCs & Content:"),  ini.groupNameNPCs(),       [&ini](const QString& v){ ini.setGroupNameNPCs(v); });
+  addRow(tr("Frameworks:"),      ini.groupNameFrameworks(), [&ini](const QString& v){ ini.setGroupNameFrameworks(v); });
+  addRow(tr("Archive Loaders:"), ini.groupNameArchive(),   [&ini](const QString& v){ ini.setGroupNameArchive(v); });
+
+  auto* resetBtn = new QPushButton(tr("Reset to defaults"), namesGroup);
+  connect(resetBtn, &QPushButton::clicked, page, [&ini, page]() {
+    ini.resetGroupNamesToDefaults();
+    // Rebuild the tab to reflect reset values
+  });
+  namesForm->addRow(QString(), resetBtn);
+  vbox->addWidget(namesGroup);
+
+  // ---- Updates ----
+  auto* updGroup = new QGroupBox(tr("Updates"), page);
+  auto* updForm  = new QFormLayout(updGroup);
+  auto* nexusEdit = new QLineEdit(ini.skipVersion().isEmpty()
+                                      ? QStringLiteral("https://www.nexusmods.com/")
+                                      : ini.skipVersion(),
+                                  updGroup);
+  nexusEdit->setPlaceholderText(tr("Nexus Mods page URL"));
+  updForm->addRow(tr("Nexus URL:"), nexusEdit);
+
+  auto* checkNowBtn = new QPushButton(tr("Check for update now"), updGroup);
+  connect(checkNowBtn, &QPushButton::clicked, page, [this]() {
+    auto* checker = new UpdateChecker(u"0.2.0"_s, this);
+    connect(checker, &UpdateChecker::updateAvailable, this,
+            [this](const QString& latest, const QString& url) {
+              bsWarn(tr("Update available: v%1").arg(latest));
+              UpdateDialog dlg(latest, url, topLevelWidget());
+              dlg.exec();
+            });
+    checker->check();
+  });
+  updForm->addRow(QString(), checkNowBtn);
+  vbox->addWidget(updGroup);
+
+  // ---- About ----
+  auto* aboutLabel = new QLabel(
+      tr("<small>BSPlugins Extended v0.2.0 by MK-HATERS<br>"
+         "Based on work by Parapets and Alaxouche<br>"
+         "<a href='https://github.com/MK-HATERS/bsplugins-extended'>GitHub</a>"
+         "</small>"),
+      page);
+  aboutLabel->setOpenExternalLinks(true);
+  aboutLabel->setAlignment(Qt::AlignCenter);
+  vbox->addWidget(aboutLabel);
+
+  vbox->addStretch();
+  return page;
 }
 
 // ---------------------------------------------------------------------------

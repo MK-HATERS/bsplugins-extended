@@ -5,10 +5,12 @@
 #include "PluginGroupProxyModel.h"
 #include "PluginListModel.h"
 #include "PluginSortFilterProxyModel.h"
+#include "TESData/FileInfo.h"
 #include "TESData/PluginList.h"
 
 #include <QMetaObject>
 #include <QSortFilterProxyModel>
+#include <QTextBrowser>
 #include <QWidget>
 
 class Ui_PluginsWidget;
@@ -90,6 +92,8 @@ private:
   void showGroupReviewDialog();
   void checkVersionOnStartup();
   void backupLoadOrder(const QString& label) const;
+  void refreshInfoTab(const TESData::FileInfo* plugin);
+  [[nodiscard]] QWidget* buildSettingsTab(QWidget* parent);
   [[nodiscard]] bool confirmMassOperation(const QString& text) const;
 
 
@@ -107,6 +111,7 @@ private:
   PluginListModel* m_PluginListModel      = nullptr;
   PluginSortFilterProxyModel* m_SortProxy = nullptr;
   PluginGroupProxyModel* m_GroupProxy     = nullptr;
+  QTextBrowser* m_InfoBrowser             = nullptr;
   IPanelInterface* m_PanelInterface;
 
   MOBase::IOrganizer* m_Organizer;

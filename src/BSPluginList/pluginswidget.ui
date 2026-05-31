@@ -185,6 +185,14 @@
     </layout>
    </item>
    <item>
+    <widget class="QWidget" name="pluginsContainer">
+     <layout class="QVBoxLayout" name="pluginsContainerLayout">
+      <property name="spacing"><number>2</number></property>
+      <property name="leftMargin"><number>0</number></property>
+      <property name="topMargin"><number>0</number></property>
+      <property name="rightMargin"><number>0</number></property>
+      <property name="bottomMargin"><number>0</number></property>
+      <item>
     <widget class="BSPluginList::PluginListView" name="pluginList">
      <property name="minimumSize">
       <size>
@@ -249,6 +257,7 @@
     <layout class="QHBoxLayout" name="horizontalLayout_2">
      <item>
       <spacer name="horizontalSpacer_2">
+
        <property name="orientation">
         <enum>Qt::Horizontal</enum>
        </property>
@@ -277,6 +286,9 @@
       </widget>
      </item>
     </layout>
+   </item>
+     </layout>
+    </widget>
    </item>
   </layout>
  </widget>
