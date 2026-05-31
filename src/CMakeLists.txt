@@ -25,7 +25,7 @@ find_package(mo2-lootcli-header CONFIG REQUIRED)
 find_package(fmt CONFIG REQUIRED)
 
 # Qt modules not re-exported by mo2::uibase
-find_package(Qt6 COMPONENTS WebEngineWidgets Svg REQUIRED)
+find_package(Qt6 COMPONENTS Network WebEngineWidgets Svg REQUIRED)
 
 add_library(bsplugins SHARED)
 
@@ -41,6 +41,7 @@ target_link_libraries(bsplugins PRIVATE
 	mo2::bsatk
 	mo2::lootcli-header
 	fmt::fmt
+	Qt6::Network
 	Qt6::WebEngineWidgets
 	Qt6::Svg
 )
