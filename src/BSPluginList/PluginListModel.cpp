@@ -1082,7 +1082,7 @@ void PluginListModel::applyInferredOrdering()
   for (int i = 0; i < count; ++i) {
     if (const auto* p = m_Plugins->getPlugin(i)) {
       if (p->enabled()) {
-        p->getInferredOverrides();
+        static_cast<void>(p->getInferredOverrides());
       }
     }
   }
