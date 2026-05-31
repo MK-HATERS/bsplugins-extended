@@ -165,22 +165,30 @@ PluginsWidget::~PluginsWidget() noexcept
 
 void PluginsWidget::updatePluginCount()
 {
-  int activeMasterCount      = 0;
-  int activeLightMasterCount = 0;
-  int activeOverlayCount     = 0;
-  int activeRegularCount     = 0;
-  int masterCount            = 0;
-  int lightMasterCount       = 0;
-  int overlayCount           = 0;
-  int regularCount           = 0;
-  int activeVisibleCount     = 0;
-  int conflictCount          = 0;
+  int activeMasterCount       = 0;
+  int activeLightMasterCount  = 0;
+  int activeMediumMasterCount = 0;
+  int activeOverlayCount      = 0;
+  int activeRegularCount      = 0;
+  int activeBlueprintCount    = 0;
+  int masterCount             = 0;
+  int lightMasterCount        = 0;
+  int mediumMasterCount       = 0;
+  int overlayCount            = 0;
+  int regularCount            = 0;
+  int blueprintCount          = 0;
+  int activeVisibleCount      = 0;
+  int conflictCount           = 0;
 
     const auto gameFeatures = m_Organizer->gameFeatures();
     const auto tesSupport = gameFeatures ? gameFeatures->gameFeature<MOBase::GamePlugins>() : nullptr;
 
   const bool lightPluginsAreSupported =
       tesSupport && tesSupport->lightPluginsAreSupported();
+  const bool mediumPluginsAreSupported =
+      tesSupport && tesSupport->mediumPluginsAreSupported();
+  const bool blueprintPluginsAreSupported =
+      tesSupport && tesSupport->blueprintPluginsAreSupported();
   const bool conflictManagementEnabled =
       Settings::instance()->enablePluginConflictManagement();
 
@@ -197,7 +205,18 @@ void PluginsWidget::updatePluginCount()
     if (conflictManagementEnabled &&
         info->conflictState() != TESData::FileInfo::CONFLICT_NONE)
       ++conflictCount;
-    if (info->isSmallFile()) {
+
+    // Blueprint count is separate — blueprints are also counted as masters/ESHs
+    if (info->isBlueprintFlagged() || info->isBlueprintPrefixed()) {
+      ++blueprintCount;
+      activeBlueprintCount += active ? 1 : 0;
+    }
+
+    if (info->isMediumFlagged()) {
+      ++mediumMasterCount;
+      activeMediumMasterCount += active ? 1 : 0;
+      activeVisibleCount += visible && active ? 1 : 0;
+    } else if (info->isSmallFile()) {
       ++lightMasterCount;
       activeLightMasterCount += active ? 1 : 0;
       activeVisibleCount += visible && active ? 1 : 0;
@@ -217,13 +236,15 @@ void PluginsWidget::updatePluginCount()
   }
 
   const int activeCount = activeMasterCount + activeLightMasterCount +
-                          activeOverlayCount + activeRegularCount;
-  const int totalCount = masterCount + lightMasterCount + overlayCount + regularCount;
+                          activeMediumMasterCount + activeOverlayCount +
+                          activeRegularCount;
+  const int totalCount  = masterCount + lightMasterCount + mediumMasterCount +
+                          overlayCount + regularCount;
 
   ui->activePluginsCounter->display(activeVisibleCount);
 
   QString toolTip;
-  toolTip.reserve(575);
+  toolTip.reserve(700);
   toolTip += uR"(<table cellspacing="6">)"_s
              uR"(<tr><th>%1</th><th>%2</th><th>%3</th></tr>)"_s.arg(tr("Type"))
                  .arg(tr("Active"), -12)
@@ -238,9 +259,15 @@ void PluginsWidget::updatePluginCount()
   toolTip += row.arg(tr("ESMs+ESPs"))
                  .arg(activeMasterCount + activeRegularCount)
                  .arg(masterCount + regularCount);
+  if (mediumPluginsAreSupported)
+    toolTip +=
+        row.arg(tr("ESHs")).arg(activeMediumMasterCount).arg(mediumMasterCount);
   if (lightPluginsAreSupported)
     toolTip += row.arg(tr("ESLs")).arg(activeLightMasterCount).arg(lightMasterCount);
-  if (Settings::instance()->enablePluginConflictManagement() && conflictCount > 0)
+  if (blueprintPluginsAreSupported)
+    toolTip +=
+        row.arg(tr("Blueprint masters")).arg(activeBlueprintCount).arg(blueprintCount);
+  if (conflictManagementEnabled && conflictCount > 0)
     toolTip +=
         uR"(<tr><td>%1:</td><td align=right colspan=2>%2</td></tr>)"_s.arg(
             tr("Conflicting plugins"), QString::number(conflictCount));

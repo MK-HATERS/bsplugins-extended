@@ -174,8 +174,8 @@ void FileConflictParser::MainRecordData(std::istream& stream)
   case "HEDR"_ts: {
     struct Header
     {
-      float version;
-      int32_t numRecords;
+      float    version;
+      int32_t  numRecords;
       uint32_t nextObjectId;
     };
 
@@ -186,6 +186,19 @@ void FileConflictParser::MainRecordData(std::istream& stream)
     }
 
     m_Plugin->setHasNoRecords(header.numRecords == 0);
+    m_Plugin->setHeaderVersion(header.version);
+
+    // Fast ObjectID pre-check using nextObjectId (cheaper than scanning every
+    // record). Definitive per-record scan still happens in Form() but this
+    // catches the common case instantly.
+    if (header.nextObjectId > 0) {
+      const uint32_t maxObject = header.nextObjectId - 1;
+      if (m_IsMediumPlugin && maxObject > 0x0000FF) {
+        m_Plugin->setHasInvalidFormIds(true);
+      } else if (m_IsLightPlugin && !m_IsMediumPlugin && maxObject > 0x000FFF) {
+        m_Plugin->setHasInvalidFormIds(true);
+      }
+    }
   } break;
 
   case "MAST"_ts: {

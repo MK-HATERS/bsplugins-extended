@@ -1016,8 +1016,8 @@ int PluginList::formVersion(const QString& name) const
 
 float PluginList::headerVersion(const QString& name) const
 {
-  Q_UNUSED(name);
-  return -1.0F;
+  const auto plugin = findPlugin(name);
+  return plugin ? plugin->headerVersion() : -1.0F;
 }
 
 QString PluginList::author(const QString& name) const
@@ -1285,9 +1285,13 @@ void PluginList::scanDataFiles(bool invalidate)
 
     const bool forceLoaded  = primaryPlugins.contains(filename, Qt::CaseInsensitive);
     const bool forceEnabled = enabledPlugins.contains(filename, Qt::CaseInsensitive);
+    const bool eslUnsupported =
+        !lightPluginsAreSupported &&
+        filename.endsWith(u".esl"_s, Qt::CaseInsensitive);
     const bool forceDisabled =
         !forceLoaded && !forceEnabled &&
-        (loadOrderMechanism == MOBase::IPluginGame::LoadOrderMechanism::None);
+        (loadOrderMechanism == MOBase::IPluginGame::LoadOrderMechanism::None ||
+         eslUnsupported);
 
     const QString fullPath = m_Organizer->resolvePath(filename);
 

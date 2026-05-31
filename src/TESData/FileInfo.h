@@ -74,8 +74,9 @@ public:
     bool isBlueprintFlagged  = false;
     bool isBlueprintPrefixed = false;
     bool hasNoRecords        = false;
-    bool hasInvalidFormIds   = false;
-    int  interiorCellCount   = 0;
+    bool  hasInvalidFormIds   = false;
+    int   interiorCellCount   = 0;
+    float headerVersion       = -1.0f;
 
     QStringList masters;
     mutable boost::container::flat_set<QString, MOBase::FileNameComparator> masterUnset;
@@ -151,6 +152,8 @@ public:
   void setHasInvalidFormIds(bool value) { m_Metadata.hasInvalidFormIds = value; }
   [[nodiscard]] int interiorCellCount() const { return m_Metadata.interiorCellCount; }
   void setInteriorCellCount(int value) { m_Metadata.interiorCellCount = value; }
+  [[nodiscard]] float headerVersion() const { return m_Metadata.headerVersion; }
+  void setHeaderVersion(float value) { m_Metadata.headerVersion = value; }
 
   [[nodiscard]] const auto& masters() const { return m_Metadata.masters; }
   void addMaster(const QString& master) { m_Metadata.masters.push_back(master); }

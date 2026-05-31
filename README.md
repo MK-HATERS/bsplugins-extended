@@ -64,6 +64,21 @@ Starfield introduced medium-sized plugins that sit between full plugins and ESL 
 ### Master-Child Zone Isolation
 Following MO2's rules, master-dependency constraints are only enforced within the same blueprint zone. A regular master plugin does not affect the ordering of blueprint plugins and vice versa.
 
+### ESL Force-Disable on Unsupported Games
+If a `.esl` file is present for a game that does not support light plugins, it is automatically force-disabled (matching MO2 behaviour) rather than being treated as a regular plugin and potentially corrupting the load order.
+
+### Plugin Count Breakdown
+The active plugin counter tooltip now shows a full breakdown by type — ESMs, ESPs, ESHs, ESLs, Blueprint masters — with active and total counts for each, matching MO2's counter display. ESH and Blueprint rows only appear when the current game supports those plugin types.
+
+### ONAM Conflict Detection
+Navmesh, landscape, dialog, and scene record overrides are declared in the TES4 `ONAM` subrecord. bsplugins-extended reads this list and registers those overrides in the conflict system, so navmesh/landscape conflicts are detected without requiring the slow full CELL/WRLD group scan.
+
+### ObjectID Range Validation
+ESL plugins must keep record ObjectIDs ≤ `0xFFF`; ESH plugins must keep them ≤ `0xFF`. If a plugin violates these limits (indicating a broken Creation Kit export), the warning icon is shown and the tooltip explains the issue. The `nextObjectId` field in the HEDR subrecord is used as a fast pre-check.
+
+### Plugin Header Version
+The `headerVersion` field (the float at the start of the HEDR subrecord) is now parsed and exposed via `IPluginList::headerVersion()`. This returns `0.96` for Starfield plugins, `0.95` for FO4, and so on — correctly implemented instead of always returning `-1`.
+
 ### LOOT Integration
 LOOT sorting is fully supported for Starfield (re-enabled in LOOT v0.29.0). The LOOT report analysis — dirty/clean plugin info, incompatibilities, missing masters — is displayed inline in the plugin list tooltip. Blueprint and medium plugins are handled transparently by the LOOT library; no special configuration is required.
 
