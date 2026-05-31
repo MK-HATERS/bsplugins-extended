@@ -100,6 +100,12 @@ void PluginListContextMenu::addAllItemsMenu()
 
   allItemsMenu->addSeparator();
 
+  allItemsMenu->addAction(tr("Apply inferred load order"), [this]() {
+    m_Model->applyInferredOrdering();
+  });
+
+  allItemsMenu->addSeparator();
+
   allItemsMenu->addAction(tr("Enable all"), [this]() {
     if (confirmIfEnabled(m_View->topLevelWidget(), tr("Confirm"),
                          tr("Really enable all plugins?"))) {

@@ -70,6 +70,16 @@ If a `.esl` file is present for a game that does not support light plugins, it i
 ### Plugin Count Breakdown
 The active plugin counter tooltip now shows a full breakdown by type — ESMs, ESPs, ESHs, ESLs, Blueprint masters — with active and total counts for each, matching MO2's counter display. ESH and Blueprint rows only appear when the current game supports those plugin types.
 
+### Inferred Patch Detection and Smart Sort
+
+Conflict analysis now identifies when a plugin overrides many records from another plugin without declaring it as a formal master — a strong signal that it is a patch for that plugin and needs to load after it.
+
+- **Warning tooltip** — on any plugin overriding ≥ 3 records from another plugin without mastering it: *"Overrides N record(s) from [Plugin X] — if this patches [Plugin X], ensure it loads after it"*
+- **Problem flag** — warning icon shown when the count reaches ≥ 5 records (a likely accidental load order issue)
+- **Apply Inferred Load Order** — right-click → All Items → *Apply inferred load order* runs a pass over all plugins and moves any that patch another plugin (≥ 3 shared records) to load after their inferred target; safe to run after a LOOT sort to catch patches not in the LOOT masterlist
+
+This works entirely from record-level conflict data — no filename heuristics needed — and catches cases like two mods both editing the same NPC or weapon record where one is clearly a compatibility patch for the other.
+
 ### ONAM Conflict Detection
 Navmesh, landscape, dialog, and scene record overrides are declared in the TES4 `ONAM` subrecord. bsplugins-extended reads this list and registers those overrides in the conflict system, so navmesh/landscape conflicts are detected without requiring the slow full CELL/WRLD group scan.
 

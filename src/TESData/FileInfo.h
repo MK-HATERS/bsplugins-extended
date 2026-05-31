@@ -102,6 +102,9 @@ public:
     QSet<int> m_OverriddenList;
     QSet<int> m_OverwritingArchiveList;
     QSet<int> m_OverwrittenArchiveList;
+    // Records this plugin wins against each non-master plugin (index → count).
+    // Used to infer "patch for X" relationships not expressed as declared masters.
+    QMap<int, int> m_InferredOverrideCounts;
   };
 
   FileInfo(PluginList* pluginList, const QString& name, bool forceLoaded,
@@ -214,6 +217,11 @@ public:
   [[nodiscard]] const auto& getPluginOverwrittenArchive() const
   {
     return m_Conflicts.value().m_OverwrittenArchiveList;
+  }
+
+  [[nodiscard]] const auto& getInferredOverrides() const
+  {
+    return m_Conflicts.value().m_InferredOverrideCounts;
   }
 
   [[nodiscard]] bool isMasterFile() const;

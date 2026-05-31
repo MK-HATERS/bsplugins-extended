@@ -91,7 +91,8 @@ static void checkConflict(QSet<int>& winning, QSet<int>& losing, const FileInfo&
                           const TESData::PluginList* pluginList,
                           TESFileHandle alternative, bool ignoreMasters,
                           bool* hasWinningConflict = nullptr,
-                          bool* hasLosingConflict  = nullptr)
+                          bool* hasLosingConflict  = nullptr,
+                          QMap<int, int>* winningCounts = nullptr)
 {
   const auto entry      = pluginList->findEntryByName(file.name().toStdString());
   const auto otherEntry = pluginList->findEntryByHandle(alternative);
@@ -116,6 +117,11 @@ static void checkConflict(QSet<int>& winning, QSet<int>& losing, const FileInfo&
         *hasWinningConflict = true;
       }
     }
+    // Always count raw wins for inferred-dependency analysis regardless of
+    // ignoreMasters, so the patch-detection heuristic sees the full picture.
+    if (winningCounts) {
+      (*winningCounts)[otherIndex]++;
+    }
   } else {
     if (!ignoreMasters ||
         !otherFile->masters().contains(file.name(), Qt::CaseInsensitive)) {
@@ -139,8 +145,9 @@ FileInfo::Conflicts FileInfo::doConflictCheck() const
   const bool ignoreMasters =
       Settings::instance()->get<bool>("ignore_master_conflicts", false);
 
-  int checkedRecords      = 0;
-  bool allRecordsLosing   = true;
+  int checkedRecords    = 0;
+  bool allRecordsLosing = true;
+  QMap<int, int> winningCounts;  // plugin index → records this plugin wins against it
 
   entry->forEachRecord([&](auto&& record) {
     if (record->ignored())
@@ -153,15 +160,24 @@ FileInfo::Conflicts FileInfo::doConflictCheck() const
     for (const auto alternative : record->alternatives()) {
       checkConflict(conflicts.m_OverridingList, conflicts.m_OverriddenList, *this,
                     m_PluginList, alternative, ignoreMasters,
-                    &recordHasWinningConflict, &recordHasLosingConflict);
+                    &recordHasWinningConflict, &recordHasLosingConflict,
+                    &winningCounts);
     }
-
-
 
     if (!recordHasLosingConflict) {
       allRecordsLosing = false;
     }
   });
+
+  // Build inferred override map: plugins we win against that we don't declare
+  // as masters. A high count suggests this plugin patches the other without
+  // expressing that relationship formally — useful for load order warnings.
+  for (auto it = winningCounts.constBegin(); it != winningCounts.constEnd(); ++it) {
+    const auto other = m_PluginList->getPlugin(it.key());
+    if (other && !masters().contains(other->name(), Qt::CaseInsensitive)) {
+      conflicts.m_InferredOverrideCounts[it.key()] = it.value();
+    }
+  }
 
   for (const auto& archive : m_FileSystemData.archives) {
     const auto archiveEntry = m_PluginList->findArchive(archive);

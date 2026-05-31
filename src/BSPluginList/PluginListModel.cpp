@@ -393,6 +393,27 @@ QVariant PluginListModel::tooltipData(const QModelIndex& index) const
                  "</b>";
     }
 
+    // Inferred patch relationships: plugins this one overrides without mastering.
+    // A high count means this plugin is likely a patch for the other and should
+    // load after it.
+    if (plugin->enabled()) {
+      const auto& inferred = plugin->getInferredOverrides();
+      if (!inferred.isEmpty()) {
+        // Find the top inferred dependency (highest override count)
+        auto maxIt = std::max_element(inferred.constBegin(), inferred.constEnd());
+        if (maxIt != inferred.constEnd() && maxIt.value() >= 3) {
+          const auto other = m_Plugins->getPlugin(maxIt.key());
+          if (other) {
+            toolTip += "<br><b>" + tr("Inferred patch target") + "</b>: " +
+                       tr("Overrides %1 record(s) from <b>%2</b> without declaring "
+                          "it as a master — if this patches %2, ensure it loads after it.")
+                           .arg(maxIt.value())
+                           .arg(other->name());
+          }
+        }
+      }
+    }
+
     QStringList enabledMasters;
     std::ranges::remove_copy_if(plugin->masters(), std::back_inserter(enabledMasters),
                                 [&](auto&& master) {
@@ -631,6 +652,15 @@ static bool isProblematic(const TESData::FileInfo* plugin,
     // ESL/ESH plugin contains records whose ObjectIDs exceed the allowed range
     if (plugin->hasInvalidFormIds()) {
       return true;
+    }
+    // Plugin overrides many records from another without declaring it as a master —
+    // likely a patch placed in the wrong position
+    if (plugin->enabled()) {
+      for (const int count : plugin->getInferredOverrides()) {
+        if (count >= 5) {
+          return true;
+        }
+      }
     }
   }
 
@@ -1038,6 +1068,12 @@ void PluginListModel::setEnabledAll(bool enabled)
     return index(i++, 0);
   });
   setEnabled(indices, enabled);
+}
+
+void PluginListModel::applyInferredOrdering()
+{
+  clearRoleCaches();
+  m_Plugins->applyInferredOrdering();
 }
 
 void PluginListModel::setEnabled(const QModelIndexList& indices, bool enabled)

@@ -88,6 +88,8 @@ public slots:
 
   void setEnabledAll(bool enabled);
 
+  void applyInferredOrdering();
+
 
 
   void setEnabled(const QModelIndexList& indices, bool enabled);

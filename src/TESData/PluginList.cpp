@@ -1778,6 +1778,52 @@ void PluginList::pluginStatesChanged(const QStringList& pluginNames,
   m_PluginStateChanged(infos);
 }
 
+void PluginList::applyInferredOrdering()
+{
+  static constexpr int kThreshold = 3;
+
+  bool changed = false;
+  // Run multiple passes to propagate chains (A→B→C).
+  for (int pass = 0; pass < 3; ++pass) {
+    bool passChanged = false;
+    for (int i = 0; i < static_cast<int>(m_PluginsByPriority.size()); ++i) {
+      const int idx    = m_PluginsByPriority[i];
+      const auto& plug = m_Plugins.at(idx);
+
+      if (!plug->enabled() || plug->forceLoaded()) {
+        continue;
+      }
+
+      const auto& inferred = plug->getInferredOverrides();
+      for (auto it = inferred.constBegin(); it != inferred.constEnd(); ++it) {
+        if (it.value() < kThreshold) {
+          continue;
+        }
+        const auto& other = m_Plugins.at(it.key());
+        if (!other->enabled()) {
+          continue;
+        }
+        // If this plugin currently loads BEFORE the one it infers it patches,
+        // move it just after.
+        if (plug->priority() < other->priority()) {
+          moveToPriority({idx}, other->priority() + 1);
+          passChanged = true;
+          changed     = true;
+          break;  // priority changed; restart inner scan for this plugin
+        }
+      }
+    }
+    if (!passChanged) {
+      break;
+    }
+  }
+
+  if (changed) {
+    computeCompileIndices();
+    refreshLoadOrder();
+  }
+}
+
 int PluginList::blueprintZoneStart() const
 {
   for (int p = 0; p < static_cast<int>(m_PluginsByPriority.size()); ++p) {

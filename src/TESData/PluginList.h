@@ -72,6 +72,10 @@ public:
 
   void refresh(bool invalidate = false);
 
+  // Re-orders plugins using inferred patch relationships (conflict analysis).
+  // Safe to call after a LOOT sort or manually from the UI.
+  void applyInferredOrdering();
+
   void setEnabled(int id, bool enable);
   void setEnabled(const std::vector<int>& ids, bool enable);
   void toggleState(const std::vector<int>& ids);
