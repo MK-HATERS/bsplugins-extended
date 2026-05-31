@@ -17,7 +17,6 @@
 #include "WelcomeDialog.h"
 #include "MOTools/Loot.h"
 #include "MOTools/LootGroups.h"
-#include "TESData/PluginClassifier.h"
 #include "PluginListContextMenu.h"
 #include "PluginSortFilterProxyModel.h"
 #include "ui_pluginswidget.h"
@@ -27,6 +26,8 @@
 #include <boost/range/adaptor/reversed.hpp>
 
 #include <QApplication>
+#include <QClipboard>
+#include <QGuiApplication>
 #include <QCryptographicHash>
 #include <QDate>
 #include <QHBoxLayout>
@@ -907,14 +908,16 @@ void PluginsWidget::showGroupReviewDialog()
     // The dialog itself filters already-handled suggestions.
   }
 
-  // --- Collect patch suggestions (inferred overrides >= 3 records) ---
+  // --- Collect patch suggestions (inferred overrides >= display threshold) ---
+  const int patchThreshold = MOPlugin::pluginINI().patchThreshold();
+  const int displayThreshold = std::max(1, patchThreshold / 6);
   QList<GroupReviewDialog::PatchSuggestion> patches;
   for (int i = 0; i < pluginCount; ++i) {
     const auto* plugin = m_PluginList->getPlugin(i);
     if (!plugin || !plugin->enabled()) continue;
     const auto& inferred = plugin->getInferredOverrides();
     auto maxIt = std::max_element(inferred.constBegin(), inferred.constEnd());
-    if (maxIt == inferred.constEnd() || maxIt.value() < 3) continue;
+    if (maxIt == inferred.constEnd() || maxIt.value() < displayThreshold) continue;
     const auto* target = m_PluginList->getPlugin(maxIt.key());
     if (!target) continue;
 
@@ -931,7 +934,7 @@ void PluginsWidget::showGroupReviewDialog()
     ps.targetPlugin = target->name();
     ps.targetOrigin = m_PluginList->getOriginName(maxIt.key());
     ps.recordCount  = maxIt.value();
-    ps.preChecked   = (ps.recordCount >= 20);
+    ps.preChecked   = (ps.recordCount >= patchThreshold);
     patches.append(ps);
   }
 
@@ -1758,8 +1761,16 @@ void PluginsWidget::refreshInfoTab(const TESData::FileInfo* plugin)
   const TESData::Classification cls =
       TESData::classifyPlugin(*plugin, m_PluginList->blueprintPrefix());
   if (cls.zone != TESData::PluginZone::Unknown) {
-    html += u"<b>%1</b>: %2 <i>(%3)</i><br>"_s
-                .arg(tr("Classified as"), cls.groupName, cls.reason);
+    // Confidence colour: green ≥70, amber 40-69, gray <40
+    const char* confColor = cls.confidence >= 70 ? "#4caf50"
+                          : cls.confidence >= 40 ? "#ff9800"
+                                                 : "#9e9e9e";
+    const int filled = std::clamp((cls.confidence + 10) / 20, 1, 5);
+    const QString dots = u"<span style='color:%3'>%1%2</span>"_s
+                             .arg(QString(filled, u'●'), QString(5 - filled, u'○'))
+                             .arg(QString::fromLatin1(confColor));
+    html += u"<b>%1</b>: %2 %3 <i style='color:gray'>(%4)</i><br>"_s
+                .arg(tr("Classified as"), cls.groupName, dots, cls.reason);
   }
 
   // Current group
@@ -1800,7 +1811,8 @@ void PluginsWidget::refreshInfoTab(const TESData::FileInfo* plugin)
   // Inferred patch suggestion
   const auto& inferred = plugin->getInferredOverrides();
   auto maxIt = std::max_element(inferred.constBegin(), inferred.constEnd());
-  if (maxIt != inferred.constEnd() && maxIt.value() >= 3) {
+  const int infoThreshold = std::max(1, MOPlugin::pluginINI().patchThreshold() / 6);
+  if (maxIt != inferred.constEnd() && maxIt.value() >= infoThreshold) {
     if (const auto* target = m_PluginList->getPlugin(maxIt.key())) {
       html += u"<b>%1</b>: %2 <i>(%3 shared records)</i><br>"_s
                   .arg(tr("Likely patches"), target->name(),
@@ -1827,6 +1839,8 @@ void PluginsWidget::refreshInfoTab(const TESData::FileInfo* plugin)
     html += u"<code>group=%1</code><br>"_s.arg(plugin->bsGroupHint());
     if (!plugin->bsZoneHint().isEmpty())
       html += u"<code>zone=%1</code><br>"_s.arg(plugin->bsZoneHint());
+    if (plugin->bsConfidence() >= 1 && plugin->bsConfidence() <= 100)
+      html += u"<code>confidence=%1</code><br>"_s.arg(plugin->bsConfidence());
     html += u"<small><i>%1</i></small>"_s.arg(
         tr("Assign in Group Manager to override this suggestion."));
   }
@@ -2031,13 +2045,54 @@ QWidget* PluginsWidget::buildSettingsTab(QWidget* parent)
         QTextStream ts(&f);
         ts << "group=Your Group Name\n";
         ts << "zone=Visuals\n";
-        ts << "# Zones: Visuals, World Changes, Gameplay, NPCs & Content, Frameworks\n";
+        ts << "# confidence=95   (optional: 1-100, default 95. Use 100 to lock placement.)\n";
+        ts << "# Zones: Visuals, World Changes, Gameplay, NPCs & Content, Frameworks, Patches\n";
       }
     }
     QDesktopServices::openUrl(QUrl::fromLocalFile(bsPath));
   });
   bsLay->addWidget(bsGenBtn);
   vbox->addWidget(bsGroup);
+
+  // ---- Export ----
+  auto* exportGroup = new QGroupBox(tr("Export"), page);
+  auto* exportLay   = new QVBoxLayout(exportGroup);
+  auto* exportInfo  = new QLabel(
+      tr("Copy a Markdown table of all plugins — name, group, zone, confidence, "
+         "and classification reason — to the clipboard for sharing or logging."),
+      exportGroup);
+  exportInfo->setWordWrap(true);
+  exportInfo->setStyleSheet(u"color: gray; font-size: small;"_s);
+  exportLay->addWidget(exportInfo);
+
+  auto* exportBtn = new QPushButton(tr("Copy group summary to clipboard"), exportGroup);
+  exportBtn->setToolTip(
+      tr("Generates a Markdown table listing every plugin with its group, zone, "
+         "confidence and reason. Paste into Nexus posts, load-order help threads, "
+         "or a text file for diffing before and after sorting."));
+  connect(exportBtn, &QPushButton::clicked, page, [this]() {
+    const QString prefix = m_PluginList->blueprintPrefix();
+    QString md = u"| Plugin | Group | Zone | Confidence | Reason |\n"_s;
+    md         += u"|--------|-------|------|------------|--------|\n"_s;
+    const int count = m_PluginList->pluginCount();
+    for (int i = 0; i < count; ++i) {
+      const auto* p = m_PluginList->getPlugin(i);
+      if (!p) continue;
+      const TESData::Classification cls = TESData::classifyPlugin(*p, prefix);
+      const bool ungrouped = p->group().isEmpty() || p->group() == u"default"_s;
+      const QString group = ungrouped ? cls.groupName : p->group();
+      const QString zone  = TESData::zoneName(cls.zone);
+      // Escape pipes so the table isn't broken by plugin names with | in them
+      auto esc = [](const QString& s) { return QString(s).replace(u'|', u'｜'); };
+      md += u"| %1 | %2 | %3 | %4% | %5 |\n"_s
+                .arg(esc(p->name()), esc(group), esc(zone),
+                     QString::number(cls.confidence), esc(cls.reason));
+    }
+    QGuiApplication::clipboard()->setText(md);
+    bsLog(tr("Group summary (%1 plugins) copied to clipboard.").arg(count));
+  });
+  exportLay->addWidget(exportBtn);
+  vbox->addWidget(exportGroup);
 
   vbox->addStretch();
   return page;

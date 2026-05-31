@@ -1,5 +1,6 @@
 #include "PluginList.h"
 #include "FileConflictParser.h"
+#include "MOPlugin/BSPluginsINI.h"
 #include "TESFile/Reader.h"
 
 #include <bsatk/bsatk.h>
@@ -1178,6 +1179,7 @@ static void readBsHint(TESData::FileInfo& info, const QString& bsFilePath)
   if (content.contains(u'=')) {
     // Manual parse: QSettings requires [Section] headers; .bs files don't have them.
     QString group, zone;
+    int     confidence = -1;
     for (const QString& raw : content.split(u'\n')) {
       const QString line = raw.trimmed();
       if (line.startsWith(u'#')) continue;  // comment
@@ -1185,10 +1187,11 @@ static void readBsHint(TESData::FileInfo& info, const QString& bsFilePath)
       if (eq <= 0) continue;
       const QString key = line.left(eq).trimmed().toLower();
       const QString val = line.mid(eq + 1).trimmed();
-      if (key == u"group"_s) group = val;
-      else if (key == u"zone"_s)  zone  = val;
+      if      (key == u"group"_s)      group      = val;
+      else if (key == u"zone"_s)       zone       = val;
+      else if (key == u"confidence"_s) confidence = val.toInt();
     }
-    if (!group.isEmpty()) info.setBsHint(group, zone);
+    if (!group.isEmpty()) info.setBsHint(group, zone, confidence);
   } else if (!content.isEmpty()) {
     info.setBsHint(content, QString());  // single-line = group name only
   }
@@ -1813,9 +1816,10 @@ void PluginList::pluginStatesChanged(const QStringList& pluginNames,
   m_PluginStateChanged(infos);
 }
 
-void PluginList::applyInferredOrdering()
+bool PluginList::applyInferredOrdering()
 {
-  static constexpr int kThreshold = 3;
+  const int kThreshold =
+      std::max(1, MOPlugin::pluginINI().patchThreshold() / 6);
 
   // Prewarm conflict caches first — if the cache is cold the snapshot will
   // be empty for every plugin and the sort will silently do nothing.
@@ -1877,6 +1881,7 @@ void PluginList::applyInferredOrdering()
     computeCompileIndices();
     refreshLoadOrder();
   }
+  return anyChanged;
 }
 
 int PluginList::blueprintZoneStart() const

@@ -95,9 +95,12 @@ Classification classifyPlugin(const FileInfo& plugin, const QString& blueprintPr
   };
 
   // --- 0. Mod-author .bs hint (highest priority of all) ------------------
-  if (plugin.hasBsHint()) {
+  // confidence=0 in the .bs file means "opt out — use auto-detection instead."
+  // confidence absent (-1) or 1-100 means "use this hint at that confidence."
+  if (plugin.hasBsHint() && plugin.bsConfidence() != 0) {
     result.groupName  = plugin.bsGroupHint();
-    result.confidence = 95;
+    const int bsConf  = plugin.bsConfidence();
+    result.confidence = (bsConf >= 1 && bsConf <= 100) ? bsConf : 95;
     result.reason     = u"Mod author hint (.bs file)"_s;
     // Map the zone string to our enum; fall back to the hint's zone name as group
     // if the zone doesn't match a known name (allows custom zones too)
@@ -108,7 +111,12 @@ Classification classifyPlugin(const FileInfo& plugin, const QString& blueprintPr
     else if (z.compare(u"NPCs & Content"_s,Qt::CaseInsensitive)==0) result.zone = PluginZone::NPCsContent;
     else if (z.compare(u"Visuals"_s,      Qt::CaseInsensitive) == 0) result.zone = PluginZone::Visuals;
     else if (z.compare(u"Patches"_s,      Qt::CaseInsensitive) == 0) result.zone = PluginZone::Patches;
-    else result.zone = PluginZone::Visuals;  // default zone for unknown hint
+    else {
+      // Unrecognised zone string — place in Unknown so the Group Review
+      // dialog surfaces it for manual assignment rather than silently
+      // dropping it into Visuals (which would be a wrong guess).
+      result.zone = PluginZone::Unknown;
+    }
     return cacheAndReturn(result);
   }
 
@@ -140,7 +148,7 @@ Classification classifyPlugin(const FileInfo& plugin, const QString& blueprintPr
       else if (z == u"NPCs & Content"_s)result.zone = PluginZone::NPCsContent;
       else if (z == u"Visuals"_s)       result.zone = PluginZone::Visuals;
       else if (z == u"Patches"_s)       result.zone = PluginZone::Patches;
-      else                              result.zone = PluginZone::Visuals;
+      else                              result.zone = PluginZone::Unknown;
       return cacheAndReturn(result);
     }
   }

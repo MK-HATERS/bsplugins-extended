@@ -138,6 +138,16 @@ GroupReviewDialog::GroupReviewDialog(const QList<PatchSuggestion>& patches,
   tabs->addTab(groupWidget,
                tr("Group Suggestions (%1 / %2)").arg(groupChecked).arg(groupTotal));
 
+  // --- Backup tip ---
+  auto* backupTip = new QLabel(
+      tr("<small><i>Tip: use the <b>Save</b> button in the toolbar to create a "
+         "timestamped backup before applying changes — you can restore it at any "
+         "time from the same button.</i></small>"),
+      this);
+  backupTip->setWordWrap(true);
+  backupTip->setStyleSheet(u"color: gray;"_s);
+  root->addWidget(backupTip);
+
   // --- Buttons ---
   auto* buttons = new QDialogButtonBox(this);
   auto* apply   = buttons->addButton(tr("Apply Selected"), QDialogButtonBox::AcceptRole);

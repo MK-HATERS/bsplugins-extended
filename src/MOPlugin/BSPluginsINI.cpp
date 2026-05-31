@@ -185,7 +185,10 @@ void BSPluginsINI::resetGroupNamesToDefaults()
 
 int  BSPluginsINI::patchThreshold()          const
 {
-  return m_Settings->value(u"Classification/patch_threshold"_s,         20).toInt();
+  if (m_PatchThresholdCached) return m_PatchThresholdCache;
+  m_PatchThresholdCache  = m_Settings->value(u"Classification/patch_threshold"_s, 20).toInt();
+  m_PatchThresholdCached = true;
+  return m_PatchThresholdCache;
 }
 bool BSPluginsINI::archiveDetectionEnabled() const
 {
@@ -194,6 +197,7 @@ bool BSPluginsINI::archiveDetectionEnabled() const
 void BSPluginsINI::setPatchThreshold(int v)
 {
   m_Settings->setValue(u"Classification/patch_threshold"_s, v); m_Settings->sync();
+  invalidatePatchThresholdCache();
 }
 void BSPluginsINI::setArchiveDetectionEnabled(bool v)
 {

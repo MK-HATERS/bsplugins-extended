@@ -82,6 +82,7 @@ public:
     // Mod-author .bs file hint (empty = no hint)
     QString bsGroupHint;
     QString bsZoneHint;
+    int     bsConfidence = -1;  // -1 = not set, use default 95
     // Cached classification result (computed lazily, invalidated on priority change)
     mutable bool        classificationCached = false;
     mutable int         cachedZone           = 7; // PluginZone::Unknown
@@ -183,12 +184,15 @@ public:
   // Mod-author .bs hint — highest priority in classification
   [[nodiscard]] const QString& bsGroupHint() const { return m_Metadata.bsGroupHint; }
   [[nodiscard]] const QString& bsZoneHint()  const { return m_Metadata.bsZoneHint; }
-  void setBsHint(const QString& group, const QString& zone)
+  void setBsHint(const QString& group, const QString& zone, int confidence = -1)
   {
-    m_Metadata.bsGroupHint = group;
-    m_Metadata.bsZoneHint  = zone;
+    m_Metadata.bsGroupHint      = group;
+    m_Metadata.bsZoneHint       = zone;
+    m_Metadata.bsConfidence     = confidence;
+    m_Metadata.classificationCached = false;
   }
   [[nodiscard]] bool hasBsHint() const { return !m_Metadata.bsGroupHint.isEmpty(); }
+  [[nodiscard]] int  bsConfidence() const { return m_Metadata.bsConfidence; }
 
   [[nodiscard]] const auto& masters() const { return m_Metadata.masters; }
   void addMaster(const QString& master) { m_Metadata.masters.push_back(master); }

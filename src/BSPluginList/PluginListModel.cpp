@@ -1,4 +1,5 @@
 #include "PluginListModel.h"
+#include "MOPlugin/BSPluginsINI.h"
 #include "MOPlugin/Settings.h"
 #include "PluginListDropInfo.h"
 
@@ -429,9 +430,10 @@ QVariant PluginListModel::tooltipData(const QModelIndex& index) const
     if (plugin->enabled()) {
       const auto& inferred = plugin->getInferredOverrides();
       if (!inferred.isEmpty()) {
-        // Find the top inferred dependency (highest override count)
+        const int displayThreshold =
+            std::max(1, MOPlugin::pluginINI().patchThreshold() / 6);
         auto maxIt = std::max_element(inferred.constBegin(), inferred.constEnd());
-        if (maxIt != inferred.constEnd() && maxIt.value() >= 3) {
+        if (maxIt != inferred.constEnd() && maxIt.value() >= displayThreshold) {
           const auto other = m_Plugins->getPlugin(maxIt.key());
           if (other) {
             toolTip += "<br><b>" + tr("Inferred patch target") + "</b>: " +
@@ -547,7 +549,8 @@ QVariant PluginListModel::tooltipData(const QModelIndex& index) const
     if (plugin->enabled()) {
       const auto& inferred = plugin->getInferredOverrides();
       auto maxIt = std::max_element(inferred.constBegin(), inferred.constEnd());
-      if (maxIt != inferred.constEnd() && maxIt.value() >= 20) {
+      if (maxIt != inferred.constEnd() &&
+          maxIt.value() >= MOPlugin::pluginINI().patchThreshold()) {
         const auto other = m_Plugins->getPlugin(maxIt.key());
         if (other) {
           toolTip +=
@@ -784,11 +787,11 @@ QVariant PluginListModel::iconData(const QModelIndex& index) const
   }
 
   // Inferred patch suggestion: plugin overrides many records from another
-  // without mastering it. Only shown at a high threshold (>=20) to avoid
-  // false positives from incidental record overlap.
+  // without mastering it. Threshold is user-configurable via Settings tab.
   if (plugin->enabled()) {
+    const int threshold = MOPlugin::pluginINI().patchThreshold();
     for (const int count : plugin->getInferredOverrides()) {
-      if (count >= 20) {
+      if (count >= threshold) {
         flag |= FLAG_PATCH_SUGGESTION;
         break;
       }
@@ -1135,9 +1138,11 @@ void PluginListModel::setEnabledAll(bool enabled)
 
 void PluginListModel::applyInferredOrdering()
 {
-  beginResetModel();
+  const bool anyMoved = m_Plugins->applyInferredOrdering();
+  if (!anyMoved) return;  // already sorted — skip cache flush and model reset
+
   clearRoleCaches();
-  m_Plugins->applyInferredOrdering();
+  beginResetModel();
 
   // Pre-warm conflict caches so the next repaint doesn't trigger lazy
   // doConflictCheck() for every priority-invalidated plugin on the GUI thread.
@@ -1151,6 +1156,9 @@ void PluginListModel::applyInferredOrdering()
   }
 
   endResetModel();
+  // Persist the new order — beginResetModel/endResetModel does not trigger
+  // the dataChanged → writePluginLists() save hook, so write explicitly.
+  m_Plugins->writePluginLists();
 }
 
 void PluginListModel::setEnabled(const QModelIndexList& indices, bool enabled)

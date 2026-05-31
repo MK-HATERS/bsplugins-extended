@@ -95,12 +95,15 @@ public:
 private:
   void migrate(int fromSchema);
   void invalidateCustomGroupCache() { m_CustomGroupsCached = false; }
+  void invalidatePatchThresholdCache() { m_PatchThresholdCached = false; }
 
   QSettings* m_Settings          = nullptr;
   bool       m_GroupNamesMigrated = false;
 
-  mutable bool              m_CustomGroupsCached = false;
+  mutable bool              m_CustomGroupsCached  = false;
   mutable QList<CustomGroup> m_CustomGroupsCache;
+  mutable bool              m_PatchThresholdCached = false;
+  mutable int               m_PatchThresholdCache  = 20;
 };
 
 // Global singleton — init once in BSPlugins::initPlugin()
