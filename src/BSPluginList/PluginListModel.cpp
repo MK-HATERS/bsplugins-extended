@@ -505,6 +505,15 @@ QVariant PluginListModel::tooltipData(const QModelIndex& index) const
                  "</b>" + spacing;
     }
 
+    if (plugin->hasInvalidFormIds()) {
+      toolTip +=
+          "<b>" +
+          tr("⚠ This plugin is flagged as ESL or ESH but contains records with "
+             "ObjectIDs outside the allowed range (ESL: ≤ 0xFFF, ESH: ≤ 0xFF). "
+             "This indicates a broken Creation Kit export.") +
+          "</b>" + spacing;
+    }
+
     if (plugin->hasIni()) {
       toolTip +=
           tr("There is an ini file connected to this plugin. Its settings will "
@@ -653,15 +662,10 @@ static bool isProblematic(const TESData::FileInfo* plugin,
     if (plugin->hasInvalidFormIds()) {
       return true;
     }
-    // Plugin overrides many records from another without declaring it as a master —
-    // likely a patch placed in the wrong position
-    if (plugin->enabled()) {
-      for (const int count : plugin->getInferredOverrides()) {
-        if (count >= 5) {
-          return true;
-        }
-      }
-    }
+    // Note: inferred patch relationships (override count heuristic) are NOT
+    // flagged as problematic — they are informational suggestions shown only
+    // in the tooltip and are too common in large load orders to warrant a
+    // warning icon.
   }
 
   if (lootInfo && Settings::instance()->lootShowProblems()) {
