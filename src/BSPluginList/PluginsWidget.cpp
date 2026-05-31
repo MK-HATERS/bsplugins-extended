@@ -6,7 +6,6 @@
 #include "GUI/SelectionDialog.h"
 #include "MOPlugin/Settings.h"
 #include "BSPluginsLog.h"
-#include "BSPluginsLog.h"
 #include "GroupReviewDialog.h"
 #include "MOPlugin/BSPlugins.h"
 #include "MOPlugin/BSPluginsINI.h"
@@ -37,7 +36,6 @@
 #include <QPushButton>
 #include <QSortFilterProxyModel>
 #include <QSpinBox>
-#include <QSplitter>
 #include <QTextBrowser>
 #include <QVBoxLayout>
 #include <QInputDialog>
@@ -121,7 +119,6 @@ PluginsWidget::PluginsWidget(MOBase::IOrganizer* organizer,
                   infoHint->show();
                   return;
                 }
-                const int row = sel.indexes().first().row();
                 const auto* plugin = m_PluginList->getPlugin(
                     ui->pluginList->model()
                         ->data(sel.indexes().first(), PluginListModel::IndexRole)
@@ -159,9 +156,14 @@ PluginsWidget::PluginsWidget(MOBase::IOrganizer* organizer,
         connect(btn, &QPushButton::toggled, this, [logProxy, lvl](bool on) {
           if (!on) return;
           if (lvl < 0) {
+            // "All" — remove filter
             logProxy->setFilterRegularExpression(QString());
+          } else if (lvl == static_cast<int>(LogEntry::Level::Warning)) {
+            // ≥ Warning: match "1" (Warning) or "2" (Critical)
+            logProxy->setFilterRegularExpression(QStringLiteral("[12]"));
           } else {
-            logProxy->setFilterRegularExpression(QString::number(lvl));
+            // ≥ Critical: exact match "2"
+            logProxy->setFilterRegularExpression(QStringLiteral("2"));
           }
         });
         logTbar->addWidget(btn);
@@ -208,7 +210,7 @@ PluginsWidget::PluginsWidget(MOBase::IOrganizer* organizer,
               UpdateDialog dlg(latest, url, topLevelWidget());
               dlg.exec();
             });
-    connect(checker, &UpdateChecker::checkFailed, this, []() {
+    connect(checker, &UpdateChecker::checkFailed, this, [this]() {
       bsLog(tr("Update check failed — check your network connection."));
     });
     checker->check();
@@ -1754,11 +1756,32 @@ QWidget* PluginsWidget::buildSettingsTab(QWidget* parent)
   addRow(tr("Frameworks:"),      ini.groupNameFrameworks(), [&ini](const QString& v){ ini.setGroupNameFrameworks(v); });
   addRow(tr("Archive Loaders:"), ini.groupNameArchive(),   [&ini](const QString& v){ ini.setGroupNameArchive(v); });
 
+  // Collect edit pointers so the reset button can repopulate them.
+  // addRow() above appended each QLineEdit as the field item in the form.
+  QList<QLineEdit*> groupEdits;
+  for (int r = 0; r < namesForm->rowCount(); ++r) {
+    if (auto* item = namesForm->itemAt(r, QFormLayout::FieldRole)) {
+      if (auto* e = qobject_cast<QLineEdit*>(item->widget())) {
+        groupEdits.append(e);
+      }
+    }
+  }
+
   auto* resetBtn = new QPushButton(tr("Reset to defaults"), namesGroup);
-  connect(resetBtn, &QPushButton::clicked, page, [&ini, page]() {
-    ini.resetGroupNamesToDefaults();
-    // Rebuild the tab to reflect reset values
-  });
+  connect(resetBtn, &QPushButton::clicked, page,
+          [&ini, groupEdits]() {
+            ini.resetGroupNamesToDefaults();
+            // Repopulate fields in the same order addRow() added them
+            const QStringList defaults{
+                ini.groupNamePatches(), ini.groupNameVisuals(),
+                ini.groupNameWorld(),   ini.groupNameGameplay(),
+                ini.groupNameNPCs(),    ini.groupNameFrameworks(),
+                ini.groupNameArchive()};
+            for (int i = 0; i < groupEdits.size() && i < defaults.size(); ++i) {
+              QSignalBlocker blocker(groupEdits.at(i));
+              groupEdits.at(i)->setText(defaults.at(i));
+            }
+          });
   namesForm->addRow(QString(), resetBtn);
   vbox->addWidget(namesGroup);
 
