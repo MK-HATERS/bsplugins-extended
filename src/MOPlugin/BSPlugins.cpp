@@ -1,6 +1,7 @@
 #include "BSPlugins.h"
 
 #include "BSPluginList/PluginsWidget.h"
+#include "BSPluginsINI.h"
 #include "Settings.h"
 
 using namespace Qt::Literals::StringLiterals;
@@ -9,6 +10,11 @@ bool BSPlugins::initPlugin(MOBase::IOrganizer* organizer)
 {
   m_Organizer = organizer;
   Settings::init(organizer);
+
+  // Load INI from our plugin subfolder (created on first run if absent).
+  // Schema migration preserves group name customizations across updates.
+  MOPlugin::pluginINI().load();
+
   return true;
 }
 

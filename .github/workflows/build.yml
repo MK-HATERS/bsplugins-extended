@@ -29,10 +29,16 @@ jobs:
         run: cmake --install vsbuild --config RelWithDebInfo
         working-directory: ${{ steps.build.outputs.working-directory }}
 
+      - name: Organize into subfolder
+        shell: pwsh
+        run: |
+          $install = "${{ steps.build.outputs.cmake-install-path }}/bin"
+          New-Item -ItemType Directory -Path "$install/plugins/bsplugins" -Force | Out-Null
+          Move-Item "$install/plugins/bsplugins.dll"       "$install/plugins/bsplugins/" -Force
+          Move-Item "$install/translations/bsplugins_en.qm" "$install/plugins/bsplugins/" -Force
+
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
           name: bsplugins
-          path: |
-            ${{ steps.build.outputs.cmake-install-path }}/bin/plugins/bsplugins.dll
-            ${{ steps.build.outputs.cmake-install-path }}/bin/translations/bsplugins_en.qm
+          path: ${{ steps.build.outputs.cmake-install-path }}/bin/plugins/bsplugins

@@ -1,5 +1,6 @@
 #include "PluginClassifier.h"
 #include "FileInfo.h"
+#include "MOPlugin/BSPluginsINI.h"
 
 #include <QFileInfo>
 
@@ -16,36 +17,35 @@ namespace TESData
 struct FrameworkEntry
 {
   const char* master;
-  const char* groupName;
   PluginZone  zone;
 };
 
 static const FrameworkEntry kFrameworks[] = {
   // Starfield
-  {"Starfield.esm",                    "Starfield Patches",   PluginZone::Patches},
+  {"Starfield.esm",                        PluginZone::Patches},
 
   // Skyrim / generic BGS
-  {"Unofficial Skyrim Special Edition Patch.esp", "USSEP Patches", PluginZone::Patches},
-  {"SkyUI_SE.esp",                     "SkyUI Patches",       PluginZone::Patches},
-  {"RaceMenu.esp",                     "RaceMenu Patches",    PluginZone::Frameworks},
+  {"Unofficial Skyrim Special Edition Patch.esp", PluginZone::Patches},
+  {"SkyUI_SE.esp",                         PluginZone::Patches},
+  {"RaceMenu.esp",                         PluginZone::Frameworks},
 
   // Lighting frameworks (Lux ecosystem)
-  {"Lux - Master plugin.esm",          "Lux",                 PluginZone::Visuals},
-  {"Lux Orbis - Master plugin.esm",    "Lux Orbis",           PluginZone::Visuals},
-  {"Lux Via.esp",                      "Lux Via",             PluginZone::Visuals},
-  {"Embers XD.esm",                    "Embers XD",           PluginZone::Visuals},
-  {"Water for ENB.esm",                "Water for ENB",       PluginZone::Visuals},
+  {"Lux - Master plugin.esm",              PluginZone::Visuals},
+  {"Lux Orbis - Master plugin.esm",        PluginZone::Visuals},
+  {"Lux Via.esp",                          PluginZone::Visuals},
+  {"Embers XD.esm",                        PluginZone::Visuals},
+  {"Water for ENB.esm",                    PluginZone::Visuals},
 
   // World overhauls
-  {"JKs Skyrim.esp",                   "JK's Skyrim",         PluginZone::WorldChanges},
-  {"LegacyoftheDragonborn.esm",        "LOTD",                PluginZone::NPCsContent},
-  {"Northern Roads.esp",               "Northern Roads",      PluginZone::WorldChanges},
-  {"Landscape and Water Fixes.esp",    "Landscape Fixes",     PluginZone::WorldChanges},
+  {"JKs Skyrim.esp",                       PluginZone::WorldChanges},
+  {"LegacyoftheDragonborn.esm",            PluginZone::NPCsContent},
+  {"Northern Roads.esp",                   PluginZone::WorldChanges},
+  {"Landscape and Water Fixes.esp",        PluginZone::WorldChanges},
 
   // Follower / NPC frameworks
-  {"Kaidan 2.esp",                     "Kaidan",              PluginZone::NPCsContent},
-  {"3DNPC.esp",                        "3DNPC",               PluginZone::NPCsContent},
-  {"VIGILANT.esm",                     "VIGILANT",            PluginZone::NPCsContent},
+  {"Kaidan 2.esp",                         PluginZone::NPCsContent},
+  {"3DNPC.esp",                            PluginZone::NPCsContent},
+  {"VIGILANT.esm",                         PluginZone::NPCsContent},
 };
 
 // ---------------------------------------------------------------------------
@@ -108,7 +108,8 @@ Classification classifyPlugin(const FileInfo& plugin, const QString& blueprintPr
     if (masterList.contains(fwMaster, Qt::CaseInsensitive)) {
       result.zone       = fw.zone;
       result.confidence = 85;
-      result.groupName  = QString::fromLatin1(fw.groupName);
+      // Use user's custom zone name from INI, not the framework's hardcoded name
+      result.groupName  = zoneGroupName(fw.zone);
       result.reason     = u"Masters %1"_s.arg(fwMaster);
       return result;
     }
@@ -269,14 +270,17 @@ QString zoneName(PluginZone zone)
 
 QString zoneGroupName(PluginZone zone)
 {
+  // Read user-customised names from the INI; fall back to built-in defaults
+  // if the INI hasn't been loaded yet (e.g. during unit tests).
+  const auto& ini = MOPlugin::pluginINI();
   switch (zone) {
   case PluginZone::Core:         return u"Core"_s;
-  case PluginZone::Frameworks:   return u"Frameworks"_s;
-  case PluginZone::WorldChanges: return u"World Changes"_s;
-  case PluginZone::Gameplay:     return u"Gameplay"_s;
-  case PluginZone::NPCsContent:  return u"NPCs & Content"_s;
-  case PluginZone::Visuals:      return u"Visuals"_s;
-  case PluginZone::Patches:      return u"Patches"_s;
+  case PluginZone::Frameworks:   return ini.groupNameFrameworks();
+  case PluginZone::WorldChanges: return ini.groupNameWorld();
+  case PluginZone::Gameplay:     return ini.groupNameGameplay();
+  case PluginZone::NPCsContent:  return ini.groupNameNPCs();
+  case PluginZone::Visuals:      return ini.groupNameVisuals();
+  case PluginZone::Patches:      return ini.groupNamePatches();
   case PluginZone::Unknown:      return u"Unclassified"_s;
   }
   return u"Unclassified"_s;
