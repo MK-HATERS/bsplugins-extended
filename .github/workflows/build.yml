@@ -38,4 +38,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: bsplugins
-          path: ${{ steps.build.outputs.cmake-install-path }}/bin
+          path: |
+            ${{ steps.build.outputs.cmake-install-path }}/bin/plugins/bsplugins.dll
+            ${{ steps.build.outputs.cmake-install-path }}/bin/translations/bsplugins_en.qm
