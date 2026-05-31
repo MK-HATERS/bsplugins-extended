@@ -87,6 +87,7 @@ private:
                         const QVariant& newValue);
   void checkLoadOrderChanged(const QString& binaryName);
   void importLootGroups();
+  void showGroupReviewDialog();
   [[nodiscard]] bool confirmMassOperation(const QString& text) const;
 
 

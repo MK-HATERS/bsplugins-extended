@@ -7,6 +7,7 @@
 #include <boost/container/flat_set.hpp>
 
 #include <QDateTime>
+#include <QHash>
 #include <QSet>
 #include <QString>
 
@@ -78,6 +79,11 @@ public:
     bool  hasInvalidFormIds   = false;
     int   interiorCellCount   = 0;
     float headerVersion       = -1.0f;
+
+    // Record type histogram built during conflict scanning.
+    // Key = 4-byte record type (ARMO, LIGH, NPC_, etc.), value = count.
+    // Used for automatic plugin category classification.
+    QHash<quint32, int> recordTypeHistogram;
 
     QStringList masters;
     mutable boost::container::flat_set<QString, MOBase::FileNameComparator> masterUnset;
@@ -154,6 +160,12 @@ public:
   void setHasNoRecords(bool value) { m_Metadata.hasNoRecords = value; }
   [[nodiscard]] bool hasInvalidFormIds() const { return m_Metadata.hasInvalidFormIds; }
   void setHasInvalidFormIds(bool value) { m_Metadata.hasInvalidFormIds = value; }
+
+  [[nodiscard]] const QHash<quint32, int>& recordTypeHistogram() const
+  {
+    return m_Metadata.recordTypeHistogram;
+  }
+  void incrementRecordType(quint32 type) { m_Metadata.recordTypeHistogram[type]++; }
   [[nodiscard]] int interiorCellCount() const { return m_Metadata.interiorCellCount; }
   void setInteriorCellCount(int value) { m_Metadata.interiorCellCount = value; }
   [[nodiscard]] float headerVersion() const { return m_Metadata.headerVersion; }

@@ -5,8 +5,10 @@
 #include "GUI/MessageDialog.h"
 #include "GUI/SelectionDialog.h"
 #include "MOPlugin/Settings.h"
+#include "GroupReviewDialog.h"
 #include "MOTools/Loot.h"
 #include "MOTools/LootGroups.h"
+#include "TESData/PluginClassifier.h"
 #include "PluginListContextMenu.h"
 #include "PluginSortFilterProxyModel.h"
 #include "ui_pluginswidget.h"
@@ -567,19 +569,91 @@ void PluginsWidget::on_sortButton_clicked()
 
     importLootGroups();
     m_PluginListModel->invalidate();
+    showGroupReviewDialog();
+  }
+}
 
-    // Offer to follow LOOT sort with conflict-based patch ordering
-    const auto reply = QMessageBox::question(
-        topLevelWidget(), tr("Fix Patch Load Order"),
-        tr("LOOT sort complete.\n\n"
-           "Would you also like to fix patch load order?\n"
-           "This detects mods that override records from another mod without\n"
-           "declaring it as a master, and moves them to load after it."),
-        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
-    if (reply == QMessageBox::Yes) {
-      m_PluginListModel->applyInferredOrdering();
+void PluginsWidget::showGroupReviewDialog()
+{
+  // --- Collect patch suggestions (inferred overrides >= 3 records) ---
+  QList<GroupReviewDialog::PatchSuggestion> patches;
+  const int pluginCount = m_PluginList->pluginCount();
+  for (int i = 0; i < pluginCount; ++i) {
+    const auto* plugin = m_PluginList->getPlugin(i);
+    if (!plugin || !plugin->enabled()) continue;
+    const auto& inferred = plugin->getInferredOverrides();
+    auto maxIt = std::max_element(inferred.constBegin(), inferred.constEnd());
+    if (maxIt == inferred.constEnd() || maxIt.value() < 3) continue;
+    const auto* target = m_PluginList->getPlugin(maxIt.key());
+    if (!target) continue;
+
+    GroupReviewDialog::PatchSuggestion ps;
+    ps.patchPlugin  = plugin->name();
+    ps.patchOrigin  = m_PluginList->getOriginName(i);
+    ps.targetPlugin = target->name();
+    ps.targetOrigin = m_PluginList->getOriginName(maxIt.key());
+    ps.recordCount  = maxIt.value();
+    ps.preChecked   = (ps.recordCount >= 20);
+    patches.append(ps);
+  }
+
+  // --- Collect group suggestions (unclassified plugins only) ---
+  QList<GroupReviewDialog::GroupSuggestion> groupSuggestions;
+  const QString prefix = m_PluginList->blueprintPrefix();
+  for (int i = 0; i < pluginCount; ++i) {
+    const auto* plugin = m_PluginList->getPlugin(i);
+    if (!plugin) continue;
+    const bool alreadyGrouped = !plugin->group().isEmpty() &&
+                                plugin->group() != u"default"_s;
+    const TESData::Classification cls = TESData::classifyPlugin(*plugin, prefix);
+
+    GroupReviewDialog::GroupSuggestion gs;
+    gs.pluginName      = plugin->name();
+    gs.modOrigin       = m_PluginList->getOriginName(i);
+    gs.classification  = cls;
+    gs.preChecked      = cls.confidence >= 70 && !alreadyGrouped;
+    gs.alreadyGrouped  = alreadyGrouped;
+    groupSuggestions.append(gs);
+  }
+
+  // Skip dialog if nothing to suggest
+  if (patches.isEmpty() && std::ranges::all_of(groupSuggestions,
+        [](const GroupReviewDialog::GroupSuggestion& g) { return g.alreadyGrouped; })) {
+    return;
+  }
+
+  GroupReviewDialog dlg(patches, groupSuggestions, topLevelWidget());
+  if (dlg.exec() != QDialog::Accepted) return;
+
+  // --- Apply confirmed patches ---
+  const auto confirmedPatches = dlg.confirmedPatches();
+  if (!confirmedPatches.isEmpty()) {
+    m_PluginListModel->applyInferredOrdering();
+
+    if (dlg.createPatchGroup()) {
+      QModelIndexList patchIndices;
+      for (const auto& p : confirmedPatches) {
+        const int idx = m_PluginList->getIndex(p.patchPlugin);
+        if (idx >= 0) {
+          patchIndices.append(m_PluginListModel->index(idx, 0));
+        }
+      }
+      if (!patchIndices.isEmpty()) {
+        m_PluginListModel->setGroup(patchIndices, tr("Patches"));
+      }
     }
   }
+
+  // --- Apply confirmed group assignments ---
+  for (const auto& gs : dlg.confirmedGroups()) {
+    const int idx = m_PluginList->getIndex(gs.pluginName);
+    if (idx >= 0) {
+      m_PluginListModel->setGroup({m_PluginListModel->index(idx, 0)},
+                                  gs.classification.groupName);
+    }
+  }
+
+  m_PluginListModel->invalidate();
 }
 
 void PluginsWidget::on_resetGroupsButton_clicked()

@@ -115,6 +115,10 @@ void FileConflictParser::EndForm()
 
     m_PluginList->addRecordConflict(m_PluginName, m_CurrentPath, m_CurrentType,
                                     m_CurrentName);
+
+    // Accumulate record type histogram for plugin classification.
+    // quint32 is the same memory layout as TESFile::Type (4 chars).
+    m_Plugin->incrementRecordType(static_cast<quint32>(m_CurrentType));
   }
 
   m_CurrentPath.unsetFormId();
