@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
+  <!-- Scanner verified — LOOT clean plugin -->
+  <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.4"/>
+  <polyline points="4.5,8.5 7,11 11.5,5.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

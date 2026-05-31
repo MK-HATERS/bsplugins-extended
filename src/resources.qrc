@@ -1,8 +1,20 @@
 <RCC>
     <qresource prefix="/bsplugins">
+        <!-- Legacy PNGs kept for compatibility -->
         <file alias="feather">resources/feather.png</file>
-    </qresource>
-    <qresource prefix="/bsplugins">
         <file alias="star">resources/emblem-star.png</file>
+        <!-- Starfield-themed SVG icon set -->
+        <file alias="planet">resources/planet.svg</file>
+        <file alias="comet">resources/comet.svg</file>
+        <file alias="hex-shield">resources/hex-shield.svg</file>
+        <file alias="hologram">resources/hologram.svg</file>
+        <file alias="schematic">resources/schematic.svg</file>
+        <file alias="beacon-warning">resources/beacon-warning.svg</file>
+        <file alias="comms">resources/comms.svg</file>
+        <file alias="datapad">resources/datapad.svg</file>
+        <file alias="cargo">resources/cargo.svg</file>
+        <file alias="scanner-ok">resources/scanner-ok.svg</file>
+        <file alias="mag-lock">resources/mag-lock.svg</file>
+        <file alias="query-beacon">resources/query-beacon.svg</file>
     </qresource>
 </RCC>

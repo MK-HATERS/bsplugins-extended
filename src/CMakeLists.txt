@@ -41,9 +41,10 @@ target_link_libraries(bsplugins PRIVATE mo2::bsatk)
 find_package(mo2-lootcli-header CONFIG REQUIRED)
 target_link_libraries(bsplugins PRIVATE mo2::lootcli-header)
 
-# WebEngineWidgets is only used by this plugin — not provided transitively
-find_package(Qt6 COMPONENTS WebEngineWidgets REQUIRED)
-target_link_libraries(bsplugins PRIVATE Qt6::WebEngineWidgets)
+# WebEngineWidgets is only used by this plugin — not provided transitively.
+# Svg is needed to render the custom SVG icon resources.
+find_package(Qt6 COMPONENTS WebEngineWidgets Svg REQUIRED)
+target_link_libraries(bsplugins PRIVATE Qt6::WebEngineWidgets Qt6::Svg)
 
 # Boost::thread has compiled parts we use directly (boost::thread::future).
 # The header-only Boost components (signals2, container, range) come

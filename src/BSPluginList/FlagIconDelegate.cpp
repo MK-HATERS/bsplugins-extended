@@ -17,48 +17,59 @@ QList<QString> FlagIconDelegate::getIcons(const QModelIndex& index) const
 
   QList<QString> icons;
 
+  // Critical problems (missing masters, invalid ObjectIDs, broken blueprints)
   if (flags & FLAG_PROBLEMATIC) {
-    icons.append(":/MO/gui/warning");
+    icons.append(":/bsplugins/beacon-warning");
   }
 
+  // LOOT messages / informational notices
   if (flags & FLAG_INFORMATION) {
-    icons.append(":/MO/gui/information");
+    icons.append(":/bsplugins/comms");
   }
 
+  // Has an associated INI file
   if (flags & FLAG_INI) {
-    icons.append(":/MO/gui/attachment");
+    icons.append(":/bsplugins/datapad");
   }
 
+  // Has associated BSA/BA2 archives
   if (flags & FLAG_BSA) {
-    icons.append(":/MO/gui/archive_conflict_neutral");
+    icons.append(":/bsplugins/cargo");
   }
 
+  // ESM — master plugin (ringed planet)
   if (flags & FLAG_MASTER) {
-    icons.append(":/bsplugins/star");
+    icons.append(":/bsplugins/planet");
   }
 
+  // ESL — light plugin (comet)
   if (flags & FLAG_LIGHT) {
-    icons.append(":/bsplugins/feather");
+    icons.append(":/bsplugins/comet");
   }
 
+  // Overlay — no record space consumed (hologram)
   if (flags & FLAG_OVERLAY) {
-    icons.append(":/MO/gui/instance_switch");
+    icons.append(":/bsplugins/hologram");
   }
 
+  // ESH — medium plugin (hex shield)
   if (flags & FLAG_MEDIUM) {
-    icons.append(":/MO/gui/run");
+    icons.append(":/bsplugins/hex-shield");
   }
 
+  // Blueprint — auto-loaded alongside paired main plugin (schematic)
   if (flags & FLAG_BLUEPRINT) {
-    icons.append(":/MO/gui/link");
+    icons.append(":/bsplugins/schematic");
   }
 
+  // LOOT verified clean
   if (flags & FLAG_CLEAN) {
-    icons.append(":/MO/gui/edit_clear");
+    icons.append(":/bsplugins/scanner-ok");
   }
 
+  // Locked load order position
   if (flags & FLAG_LOCKED) {
-    icons.append(":/MO/gui/locked");
+    icons.append(":/bsplugins/mag-lock");
   }
 
   return icons;

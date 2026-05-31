@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
+  <!-- Overlapping projection circles — Overlay plugin (no record space) -->
+  <circle cx="6"  cy="8" r="4" stroke="currentColor" stroke-width="1.3"/>
+  <circle cx="10" cy="8" r="4" stroke="currentColor" stroke-width="1.3"/>
+</svg>

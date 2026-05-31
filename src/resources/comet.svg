@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
+  <!-- Comet with tail — ESL light plugin -->
+  <circle cx="11.5" cy="4.5" r="2.2" fill="currentColor"/>
+  <line x1="9.8" y1="6.2" x2="2.5" y2="12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="9.2" y1="6.8" x2="2" y2="10.5" stroke="currentColor" stroke-width="1" stroke-linecap="round" opacity="0.55"/>
+  <line x1="10.4" y1="7.2" x2="4.5" y2="13.5" stroke="currentColor" stroke-width="1" stroke-linecap="round" opacity="0.55"/>
+</svg>
