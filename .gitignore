@@ -2,4 +2,8 @@ vsbuild/
 CHANGELOG.md
 BUILD_MEMORY.md
 CMakeUserPresets.json
+artifact/
+artifact_*/
+*.zip
+TES5Edit/
 
