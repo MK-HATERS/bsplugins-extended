@@ -36,6 +36,7 @@
 #include <QPushButton>
 #include <QSortFilterProxyModel>
 #include <QSpinBox>
+#include <QSplitter>
 #include <QTextBrowser>
 #include <QVBoxLayout>
 #include <QInputDialog>
@@ -72,21 +73,17 @@ PluginsWidget::PluginsWidget(MOBase::IOrganizer* organizer,
   optionsMenu = listOptionsMenu();
   ui->listOptionsBtn->setMenu(optionsMenu);
 
-  // ---- Internal tab widget: Plugins / Info / Log / Settings ----
-  // The .ui wraps pluginList+filter in "pluginsContainer" so we can lift
-  // the whole thing into the first tab with one call.
+  // ---- Supplementary tab panel: Info / Log / Settings ----
+  // The plugin list stays always-visible as the main content; we add a
+  // compact tabbed section below it for Info, Log and Settings.
+  // (No "Plugins" tab here — this panel IS the Plugins tab.)
   {
     auto* rootLayout      = qobject_cast<QVBoxLayout*>(layout());
     auto* pluginsContainer = findChild<QWidget*>(u"pluginsContainer"_s);
 
     if (rootLayout && pluginsContainer) {
-      rootLayout->removeWidget(pluginsContainer);
-
       auto* innerTabs = new QTabWidget(this);
-      innerTabs->setDocumentMode(true);   // flush with panel edge, no border
-
-      // ── Tab 0: Plugins ────────────────────────────────────────────────
-      innerTabs->addTab(pluginsContainer, tr("Plugins"));
+      innerTabs->setDocumentMode(true);
 
       // ── Tab 1: Info ───────────────────────────────────────────────────
       // Shows conflict/classification details for the selected plugin.
@@ -97,7 +94,7 @@ PluginsWidget::PluginsWidget(MOBase::IOrganizer* organizer,
       infoLay->setSpacing(4);
 
       auto* infoHint = new QLabel(
-          tr("Select a plugin in the Plugins tab to see details here."), infoPage);
+          tr("Select a plugin in the list above to see details here."), infoPage);
       infoHint->setAlignment(Qt::AlignCenter);
       infoHint->setWordWrap(true);
       infoHint->setStyleSheet(u"color: gray;"_s);
@@ -189,7 +186,16 @@ PluginsWidget::PluginsWidget(MOBase::IOrganizer* organizer,
       auto* settingsPage = buildSettingsTab(innerTabs);
       innerTabs->addTab(settingsPage, tr("Settings"));
 
-      rootLayout->addWidget(innerTabs);
+      // Plugin list above (stretches), supplementary panel below (fixed start)
+      auto* splitter = new QSplitter(Qt::Vertical, this);
+      splitter->addWidget(pluginsContainer);
+      splitter->addWidget(innerTabs);
+      // Plugin list gets most of the space; supplementary panel starts small
+      splitter->setSizes({10000, 180});
+      splitter->setCollapsible(0, false);  // list is never fully collapsed
+      splitter->setHandleWidth(5);
+
+      rootLayout->addWidget(splitter);
     }
   }
 
