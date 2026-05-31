@@ -5,6 +5,7 @@
 #include "GUI/MessageDialog.h"
 #include "GUI/SelectionDialog.h"
 #include "MOPlugin/Settings.h"
+#include "BSPluginsLog.h"
 #include "GroupReviewDialog.h"
 #include "MOPlugin/BSPlugins.h"
 #include "MOPlugin/BSPluginsINI.h"
@@ -28,7 +29,12 @@
 #include <QDate>
 #include <QHBoxLayout>
 #include <QIcon>
+#include <QLabel>
+#include <QListView>
 #include <QPushButton>
+#include <QSortFilterProxyModel>
+#include <QSplitter>
+#include <QVBoxLayout>
 #include <QInputDialog>
 #include <QMenu>
 #include <QMessageBox>
@@ -62,6 +68,95 @@ PluginsWidget::PluginsWidget(MOBase::IOrganizer* organizer,
   ui->pluginList->sortByColumn(PluginListModel::COL_PRIORITY, Qt::AscendingOrder);
   optionsMenu = listOptionsMenu();
   ui->listOptionsBtn->setMenu(optionsMenu);
+
+  // ---- Log panel: collapsible strip at the bottom of the plugin list ----
+  // Inject a QSplitter into the root QVBoxLayout so the log sits below the
+  // plugin list view without touching the toolbar row.
+  {
+    auto* rootLayout = qobject_cast<QVBoxLayout*>(layout());
+    if (rootLayout) {
+      // Find the plugin list widget (last item before we add anything)
+      // and replace it with a splitter containing the list + log panel.
+      const int listIdx = rootLayout->count() - 1;
+      auto* listItem    = rootLayout->itemAt(listIdx);
+      if (listItem && listItem->widget()) {
+        QWidget* listWidget = listItem->widget();
+        rootLayout->removeWidget(listWidget);
+
+        auto* splitter = new QSplitter(Qt::Vertical, this);
+        splitter->addWidget(listWidget);
+
+        // ---- Log panel widget ----
+        auto* logPanel = new QWidget(splitter);
+        auto* logVBox  = new QVBoxLayout(logPanel);
+        logVBox->setContentsMargins(0, 0, 0, 0);
+        logVBox->setSpacing(2);
+
+        // Header row: title + filter buttons + clear
+        auto* logHeader = new QWidget(logPanel);
+        auto* logHBox   = new QHBoxLayout(logHeader);
+        logHBox->setContentsMargins(4, 2, 4, 2);
+
+        auto* logTitle = new QLabel(tr("BSPlugins Log"), logHeader);
+        logTitle->setStyleSheet(u"font-weight: bold; font-size: small;"_s);
+        logHBox->addWidget(logTitle);
+        logHBox->addStretch();
+
+        // Filter proxy for the log view
+        auto* logProxy = new QSortFilterProxyModel(this);
+        logProxy->setSourceModel(&BSPluginsLog::instance());
+        logProxy->setFilterRole(BSPluginsLog::LevelRole);
+
+        auto makeFilterBtn = [&](const QString& text, int minLevel) {
+          auto* btn = new QPushButton(text, logHeader);
+          btn->setCheckable(true);
+          btn->setFlat(true);
+          btn->setFixedHeight(18);
+          btn->setStyleSheet(u"font-size: small; padding: 0 4px;"_s);
+          connect(btn, &QPushButton::toggled, this, [logProxy, minLevel](bool on) {
+            if (on) {
+              logProxy->setFilterRegularExpression(
+                  QString::number(minLevel) + u"|" +
+                  QString::number(minLevel + 1));
+            } else {
+              logProxy->setFilterRegularExpression(QString());
+            }
+          });
+          return btn;
+        };
+        logHBox->addWidget(makeFilterBtn(tr("⚠ Warnings"),  1));
+        logHBox->addWidget(makeFilterBtn(tr("✕ Critical"),  2));
+
+        auto* clearBtn = new QPushButton(tr("Clear"), logHeader);
+        clearBtn->setFlat(true);
+        clearBtn->setFixedHeight(18);
+        clearBtn->setStyleSheet(u"font-size: small; padding: 0 4px;"_s);
+        connect(clearBtn, &QPushButton::clicked, &BSPluginsLog::instance(),
+                &BSPluginsLog::clear);
+        logHBox->addWidget(clearBtn);
+
+        logVBox->addWidget(logHeader);
+
+        auto* logView = new QListView(logPanel);
+        logView->setModel(logProxy);
+        logView->setAlternatingRowColors(true);
+        logView->setSelectionMode(QAbstractItemView::SingleSelection);
+        logView->setUniformItemSizes(true);
+        logView->setWordWrap(false);
+        logView->setStyleSheet(u"font-size: small;"_s);
+        logVBox->addWidget(logView);
+
+        splitter->addWidget(logPanel);
+
+        // Start with log panel collapsed (height 0)
+        splitter->setSizes({10000, 0});
+        splitter->setCollapsible(1, true);
+        splitter->setHandleWidth(6);
+
+        rootLayout->insertWidget(listIdx, splitter);
+      }
+    }
+  }
 
   // Settings gear button — opens BSPlugins settings dialog (not MO2's global one)
   auto* settingsBtn = new QPushButton(
@@ -97,12 +192,18 @@ PluginsWidget::PluginsWidget(MOBase::IOrganizer* organizer,
     auto* checker = new UpdateChecker(currentVer, this);
     connect(checker, &UpdateChecker::updateAvailable, this,
             [this, currentVer](const QString& latest, const QString& url) {
-              // Don't show if user already said "skip this version"
+              bsWarn(tr("Update available: v%1 → v%2").arg(currentVer, latest));
               if (MOPlugin::pluginINI().skipVersion() == latest) return;
               UpdateDialog dlg(latest, url, topLevelWidget());
               dlg.exec();
             });
+    connect(checker, &UpdateChecker::checkFailed, this, []() {
+      bsLog(tr("Update check failed — check your network connection."));
+    });
     checker->check();
+
+    // Log a startup notice so the panel shows something on first open
+    bsLog(tr("BSPlugins Extended v0.2.0 ready. Run LOOT sort to classify plugins."));
   });
 
     auto* const sortShortcut = new QShortcut(QKeySequence(tr("Ctrl+Shift+S")), this);
@@ -152,6 +253,37 @@ PluginsWidget::PluginsWidget(MOBase::IOrganizer* organizer,
 
   connect(m_PluginList, &TESData::PluginList::pluginsListChanged, this,
           &PluginsWidget::updatePluginCount);
+
+  // When the plugin list refreshes, log warnings for problematic plugins
+  connect(m_PluginList, &TESData::PluginList::pluginsListChanged, this, [this]() {
+    BSPluginsLog::instance().clear();
+    bsLog(tr("Plugin list updated — %1 plugins active.")
+              .arg(m_PluginList->pluginCount()));
+    const int count = m_PluginList->pluginCount();
+    for (int i = 0; i < count; ++i) {
+      const auto* p = m_PluginList->getPlugin(i);
+      if (!p || !p->enabled()) continue;
+      if (p->hasInvalidFormIds()) {
+        bsWarn(tr("ESL/ESH with out-of-range ObjectIDs — broken CK export"),
+               p->name());
+      }
+      if (p->isBlueprintFlagged() && !p->isBlueprintPrefixed()) {
+        bsWarn(tr("Blueprint-flagged but wrong filename prefix — game can't load it"),
+               p->name());
+      }
+      if (p->isBlueprintPrefixed() && !p->isBlueprintFlagged()) {
+        bsWarn(tr("Blueprint-prefixed but missing blueprint flag — unintended autoload"),
+               p->name());
+      }
+      if (p->hasMissingMasters()) {
+        bsCrit(tr("Missing masters: %1")
+                   .arg(QStringList(p->missingMasters().begin(),
+                                    p->missingMasters().end())
+                            .join(u", "_s)),
+               p->name());
+      }
+    }
+  });
 
   connect(m_PluginListModel, &PluginListModel::pluginStatesChanged, ui->pluginList,
           &PluginListView::updateOverwriteMarkers);
@@ -618,6 +750,7 @@ void PluginsWidget::on_sortButton_clicked()
 
     importLootGroups();
     m_PluginListModel->invalidate();
+    bsLog(tr("LOOT sort complete."));
     showGroupReviewDialog();
   }
 }
@@ -788,6 +921,16 @@ void PluginsWidget::showGroupReviewDialog()
   }
 
   m_PluginListModel->invalidate();
+
+  // Log what was applied
+  if (!confirmedPatches.isEmpty()) {
+    bsLog(tr("Fix Patch Load Order: moved %1 plugin(s) after their inferred target.")
+              .arg(confirmedPatches.size()));
+  }
+  for (const auto& gs : dlg.confirmedGroups()) {
+    bsLog(tr("Grouped: %1 → %2").arg(gs.pluginName, gs.classification.groupName),
+          gs.pluginName);
+  }
 
   // Record every plugin shown in this review as "seen" for future re-runs
   QStringList nowReviewed = reviewed;
@@ -1469,32 +1612,22 @@ void PluginsWidget::synchronizePluginLists(MOBase::IOrganizer* organizer)
 }
 
 // ---------------------------------------------------------------------------
-// Backup: copies plugins.txt, plugingroups.txt, modlist.txt into
-// <plugin_dir>/backup/<label>/ — read-only snapshot, never modified.
+// Backup: MO2 already maintains timestamped backups of plugins.txt and
+// modlist.txt in <profilePath>/backups/. We point the user there and
+// optionally trigger MO2's built-in backup via the profile interface.
 // ---------------------------------------------------------------------------
-void PluginsWidget::backupLoadOrder(const QString& label) const
+void PluginsWidget::backupLoadOrder(const QString& /*label*/) const
 {
-  const QString dest = MOPlugin::BSPluginsINI::backupDir() + u"/" + label;
-  QDir().mkpath(dest);
+  const QString backupDir = m_Organizer->profilePath() + QStringLiteral("/backups");
+  QDir().mkpath(backupDir);  // ensure it exists
 
-  const QString profile = m_Organizer->profilePath();
-  const QString moRoot  = QFileInfo(m_Organizer->basePath()).absolutePath();
-
-  // Right panel (plugin load order)
-  for (const QString& f : {u"plugins.txt"_s, u"plugingroups.txt"_s}) {
-    QFile::copy(profile + u"/" + f, dest + u"/" + f);
-  }
-
-  // Left panel (mod list) — read-only copy, we never write to it
-  const QString modlist = profile + u"/modlist.txt";
-  if (QFile::exists(modlist)) {
-    QFile::copy(modlist, dest + u"/modlist.txt");
-  }
-
-  MOBase::log::info("BSPlugins: load order backed up to {}", dest.toStdString());
   QMessageBox::information(
-      topLevelWidget(), tr("Backup Created"),
-      tr("Your load order has been backed up to:\n%1").arg(dest));
+      topLevelWidget(), tr("Load Order Backup"),
+      tr("MO2 automatically keeps timestamped backups of your load order.\n\n"
+         "Backup location:\n%1\n\n"
+         "To create a manual snapshot now, use the profile panel in MO2 "
+         "(top-left profile selector → Manage Profiles → Backup).")
+          .arg(QDir::toNativeSeparators(backupDir)));
 }
 
 // ---------------------------------------------------------------------------
