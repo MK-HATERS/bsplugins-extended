@@ -58,15 +58,21 @@ bool FileInfo::mustLoadAfter(const FileInfo& other) const
       !other.forceLoaded() &&
       (other.m_Metadata.isBlueprintFlagged || other.m_Metadata.isBlueprintPrefixed);
 
-  // Master-child relationships only apply within the same blueprint zone.
-  // A regular master does not constrain a blueprint plugin and vice versa.
-  if (thisBlueprint == otherBlueprint) {
+  // Master-child dependency is always honoured when this plugin declares
+  // other as a master — cross-zone or not. Dropping it would let a blueprint
+  // plugin load before a regular plugin it explicitly depends on.
+  // The reverse (other listing this as its master) is only enforced within the
+  // same zone; a regular plugin is not forced to load after a blueprint master.
+  {
     const bool hasMaster = this->masters().contains(other.name(), Qt::CaseInsensitive);
-    const bool isMaster  = other.masters().contains(this->name(), Qt::CaseInsensitive);
-    if (hasMaster && !isMaster) {
+    if (hasMaster) {
       return true;
-    } else if (isMaster) {
-      return false;
+    }
+    if (thisBlueprint == otherBlueprint) {
+      const bool isMaster = other.masters().contains(this->name(), Qt::CaseInsensitive);
+      if (isMaster) {
+        return false;
+      }
     }
   }
 

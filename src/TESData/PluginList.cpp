@@ -307,12 +307,12 @@ void PluginList::setEnabled(const std::vector<int>& ids, bool enable)
 
     if (shouldEnable != enabled) {
       plugin->setEnabled(shouldEnable);
-      applyBlueprintPairForPlugin(*plugin);
       changed.append(plugin->name());
     }
   }
 
   if (!changed.isEmpty()) {
+    applyBlueprintPairs();  // one pass covers all changed pairs
     computeCompileIndices();
     refreshLoadOrder();
     pluginStatesChanged(changed, enable ? STATE_ACTIVE : STATE_INACTIVE);
@@ -333,7 +333,6 @@ void PluginList::toggleState(const std::vector<int>& ids)
 
     if (shouldEnable != enabled) {
       plugin->setEnabled(shouldEnable);
-      applyBlueprintPairForPlugin(*plugin);
       if (shouldEnable) {
         active.append(plugin->name());
       } else {
@@ -343,6 +342,7 @@ void PluginList::toggleState(const std::vector<int>& ids)
   }
 
   if (!active.isEmpty() || !inactive.isEmpty()) {
+    applyBlueprintPairs();  // one pass covers all changed pairs
     computeCompileIndices();
     refreshLoadOrder();
     if (!active.isEmpty()) {
@@ -364,19 +364,8 @@ bool PluginList::canMoveToPriority(const std::vector<int>& ids, int newPriority)
     names.insert(plugin->name());
   }
 
-  // Compute the first priority index occupied by blueprint plugins.
-  // Blueprint plugins live strictly after all non-blueprint plugins.
-  int blueprintStart = static_cast<int>(m_PluginsByPriority.size());
-  if (m_BlueprintPlugins) {
-    for (int p = 0; p < static_cast<int>(m_PluginsByPriority.size()); ++p) {
-      const auto& pl = m_Plugins.at(m_PluginsByPriority[p]);
-      if (!pl->forceLoaded() &&
-          (pl->isBlueprintFlagged() || pl->isBlueprintPrefixed())) {
-        blueprintStart = p;
-        break;
-      }
-    }
-  }
+  const int blueprintStart = m_BlueprintPlugins ? blueprintZoneStart()
+                                                 : static_cast<int>(m_PluginsByPriority.size());
 
   for (const int id : ids) {
     const auto pluginToMove = m_Plugins[id];
@@ -502,23 +491,19 @@ void PluginList::moveToPriority(std::vector<int> ids, int destination, bool disj
 
   // Clamp destination to the correct blueprint zone so programmatic moves
   // (keyboard shortcuts, LOOT sort) cannot cross the zone boundary either.
-  if (m_BlueprintPlugins && !ids.empty()) {
-    int blueprintStart = static_cast<int>(m_PluginsByPriority.size());
-    for (int p = 0; p < static_cast<int>(m_PluginsByPriority.size()); ++p) {
-      const auto& pl = m_Plugins.at(m_PluginsByPriority[p]);
-      if (!pl->forceLoaded() &&
-          (pl->isBlueprintFlagged() || pl->isBlueprintPrefixed())) {
-        blueprintStart = p;
-        break;
+  // Each plugin in the batch is checked individually — a mixed-type batch must
+  // not let regular plugins land in the blueprint section or vice versa.
+  if (m_BlueprintPlugins) {
+    const int start = blueprintZoneStart();
+    for (const int id : ids) {
+      const auto& pl = m_Plugins.at(id);
+      if (pl->forceLoaded()) continue;
+      const bool isBlueprint = pl->isBlueprintFlagged() || pl->isBlueprintPrefixed();
+      if (isBlueprint) {
+        destination = std::max(destination, start);
+      } else {
+        destination = std::min(destination, start);
       }
-    }
-    const auto first = m_Plugins.at(ids.front());
-    const bool movingBlueprint = !first->forceLoaded() &&
-                                 (first->isBlueprintFlagged() || first->isBlueprintPrefixed());
-    if (movingBlueprint) {
-      destination = std::max(destination, blueprintStart);
-    } else {
-      destination = std::min(destination, blueprintStart);
     }
   }
 
@@ -849,6 +834,11 @@ void PluginList::setState(const QString& name, PluginStates state)
       return;
     }
     plugin->setEnabled(shouldEnable);
+    // During a full refresh applyBlueprintPairs() runs after all setState calls
+    // complete, so we only need the per-plugin update when called outside refresh.
+    if (!m_Refreshing) {
+      applyBlueprintPairForPlugin(*plugin);
+    }
   }
 
   queuePluginStateChange(plugin->name(), state);
@@ -1299,7 +1289,7 @@ void PluginList::scanDataFiles(bool invalidate)
         std::make_shared<FileInfo>(this, filename, forceLoaded, forceEnabled,
                                    forceDisabled, lightPluginsAreSupported));
 
-    if (blueprintPluginsAreSupported) {
+    if (blueprintPluginsAreSupported && !m_BlueprintPrefix.isEmpty()) {
       info->setBlueprintPrefixed(
           filename.startsWith(m_BlueprintPrefix, Qt::CaseInsensitive));
     }
@@ -1786,6 +1776,18 @@ void PluginList::pluginStatesChanged(const QStringList& pluginNames,
   }
 
   m_PluginStateChanged(infos);
+}
+
+int PluginList::blueprintZoneStart() const
+{
+  for (int p = 0; p < static_cast<int>(m_PluginsByPriority.size()); ++p) {
+    const auto& pl = m_Plugins.at(m_PluginsByPriority[p]);
+    if (!pl->forceLoaded() &&
+        (pl->isBlueprintFlagged() || pl->isBlueprintPrefixed())) {
+      return p;
+    }
+  }
+  return static_cast<int>(m_PluginsByPriority.size());
 }
 
 void PluginList::applyBlueprintPairForPlugin(const FileInfo& plugin)

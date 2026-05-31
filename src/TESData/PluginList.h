@@ -180,6 +180,7 @@ private:
   void enforcePluginRelationships();
   void applyBlueprintPairs();
   void applyBlueprintPairForPlugin(const FileInfo& plugin);
+  [[nodiscard]] int blueprintZoneStart() const;
   void testMasters();
   void updateCache();
   void computeCompileIndices();
