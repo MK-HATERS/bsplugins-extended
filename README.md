@@ -79,6 +79,28 @@ If a `.esl` file is present for a game that does not support light plugins, it i
 
 The active plugin counter tooltip now shows a full breakdown by type — ESMs, ESPs, ESHs, ESLs, Blueprint masters — with active and total counts for each, matching MO2's counter display. ESH and Blueprint rows only appear when the current game supports those plugin types.
 
+### Intelligent Plugin Classification and Group Review
+
+After every LOOT sort, a **Group Review** dialog appears with two tabs:
+
+**Patch Order tab** — plugins that override many records from another mod without declaring it as a master are likely patches placed in the wrong position. The dialog shows which plugin patches which target, with a confidence rating (●●●●●), the mod origin name from the left panel, and a checkbox to confirm or skip each suggestion. Confirmed patches are moved just after their target and optionally grouped into a "Patches" group. On subsequent LOOT runs, already-correctly-ordered plugins and plugins already in named groups are silently skipped — the dialog only shows genuinely unresolved issues.
+
+**Group Suggestions tab** — unclassified plugins (those still in "default") are automatically assigned to suggested groups using a 7-signal priority chain:
+
+1. LOOT masterlist group assignment (highest trust)
+2. Blueprint-prefixed plugins → Blueprints zone
+3. No records + BA2 archive → Archive Loader (left panel note shown)
+4. Masters list → framework ecosystem detection (e.g., "Lux", "LOTD", "JK's Skyrim", etc.)
+5. Record type histogram (dominant record types from the conflict scan)
+6. Name keywords (tiebreaker)
+7. Unclassified → user review bucket
+
+Already-grouped plugins, force-loaded game masters, and plugins assigned on a previous run are all skipped. Confidence dots (●●●●●) indicate classification certainty; only high-confidence suggestions are pre-checked.
+
+**Archive Loader note** — plugins that exist only to load BSA/BA2 archives (no records or only TXST records) are flagged with a 📦 icon and a note that left panel (mod list) position controls which textures/meshes win, not plugin load order.
+
+**Scales to large mod lists** — for a 3000-plugin load order only the unclassified bucket needs user attention; the rest auto-classifies in under a second. All group assignments persist in `plugingroups.txt` and are respected on future runs.
+
 ### Inferred Patch Detection and Smart Sort
 
 Conflict analysis identifies when a plugin overrides many records from another plugin without declaring it as a formal master — a strong signal that it is a patch for that plugin and needs to load after it.

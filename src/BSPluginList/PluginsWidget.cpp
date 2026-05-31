@@ -595,6 +595,13 @@ void PluginsWidget::showGroupReviewDialog()
     const auto* target = m_PluginList->getPlugin(maxIt.key());
     if (!target) continue;
 
+    // Skip if already correctly ordered (previous run handled it)
+    if (plugin->priority() > target->priority()) continue;
+
+    // Skip if already in a named group (user has handled this relationship)
+    const QString& grp = plugin->group();
+    if (!grp.isEmpty() && grp != u"default"_s) continue;
+
     GroupReviewDialog::PatchSuggestion ps;
     ps.patchPlugin  = plugin->name();
     ps.patchOrigin  = m_PluginList->getOriginName(i);
@@ -611,6 +618,9 @@ void PluginsWidget::showGroupReviewDialog()
   for (int i = 0; i < pluginCount; ++i) {
     const auto* plugin = m_PluginList->getPlugin(i);
     if (!plugin) continue;
+    // Force-loaded plugins (base game, DLC) don't need group review
+    if (plugin->forceLoaded()) continue;
+
     const bool alreadyGrouped = !plugin->group().isEmpty() &&
                                 plugin->group() != u"default"_s;
     const TESData::Classification cls = TESData::classifyPlugin(*plugin, prefix);
