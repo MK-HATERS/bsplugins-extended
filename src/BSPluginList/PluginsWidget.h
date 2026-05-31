@@ -88,6 +88,8 @@ private:
   void checkLoadOrderChanged(const QString& binaryName);
   void importLootGroups();
   void showGroupReviewDialog();
+  void checkVersionOnStartup();
+  void backupLoadOrder(const QString& label) const;
   [[nodiscard]] bool confirmMassOperation(const QString& text) const;
 
 

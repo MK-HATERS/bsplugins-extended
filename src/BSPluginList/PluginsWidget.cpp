@@ -6,6 +6,12 @@
 #include "GUI/SelectionDialog.h"
 #include "MOPlugin/Settings.h"
 #include "GroupReviewDialog.h"
+#include "MOPlugin/BSPlugins.h"
+#include "MOPlugin/BSPluginsINI.h"
+#include "PluginSettingsDialog.h"
+#include "UpdateChecker.h"
+#include "UpdateDialog.h"
+#include "WelcomeDialog.h"
 #include "MOTools/Loot.h"
 #include "MOTools/LootGroups.h"
 #include "TESData/PluginClassifier.h"
@@ -19,6 +25,10 @@
 
 #include <QApplication>
 #include <QCryptographicHash>
+#include <QDate>
+#include <QHBoxLayout>
+#include <QIcon>
+#include <QPushButton>
 #include <QInputDialog>
 #include <QMenu>
 #include <QMessageBox>
@@ -53,8 +63,47 @@ PluginsWidget::PluginsWidget(MOBase::IOrganizer* organizer,
   optionsMenu = listOptionsMenu();
   ui->listOptionsBtn->setMenu(optionsMenu);
 
+  // Settings gear button — opens BSPlugins settings dialog (not MO2's global one)
+  auto* settingsBtn = new QPushButton(
+      QIcon(u":/MO/gui/settings"_s), QString(), this);
+  settingsBtn->setToolTip(tr("BSPlugins Extended settings — group names, classification"));
+  settingsBtn->setFlat(true);
+  settingsBtn->setFixedSize(24, 24);
+  connect(settingsBtn, &QPushButton::clicked, this, [this]() {
+    PluginSettingsDialog dlg(this);
+    dlg.exec();
+  });
+  // Insert next to the list options button
+  if (auto* lay = ui->listOptionsBtn->parentWidget()
+                      ? ui->listOptionsBtn->parentWidget()->layout()
+                      : nullptr) {
+    const int idx = lay->indexOf(ui->listOptionsBtn);
+    if (idx >= 0) {
+      if (auto* box = qobject_cast<QHBoxLayout*>(lay)) {
+        box->insertWidget(idx + 1, settingsBtn);
+      }
+    }
+  }
+
   ui->sortButton->setVisible(Settings::instance()->enableSortButton());
   updateGroupActionVisibility();
+
+  // Show welcome / changelog dialog and kick off update check after UI is ready
+  organizer->onUserInterfaceInitialized([this](QMainWindow*) {
+    checkVersionOnStartup();
+
+    // Async update check — fires updateAvailable() if a newer version exists
+    const QString currentVer = u"0.2.0"_s;
+    auto* checker = new UpdateChecker(currentVer, this);
+    connect(checker, &UpdateChecker::updateAvailable, this,
+            [this, currentVer](const QString& latest, const QString& url) {
+              // Don't show if user already said "skip this version"
+              if (MOPlugin::pluginINI().skipVersion() == latest) return;
+              UpdateDialog dlg(latest, url, topLevelWidget());
+              dlg.exec();
+            });
+    checker->check();
+  });
 
     auto* const sortShortcut = new QShortcut(QKeySequence(tr("Ctrl+Shift+S")), this);
     sortShortcut->setContext(Qt::WidgetWithChildrenShortcut);
@@ -584,6 +633,55 @@ void PluginsWidget::showGroupReviewDialog()
     }
   }
 
+  // --- Build zone→user-group-name mapping from already-classified plugins ---
+  // If the user renamed "Visuals" to "Rabbit's Lights", new mods classified
+  // as Visuals will be suggested under "Rabbit's Lights" instead.
+  QMap<TESData::PluginZone, QString> userZoneNames;
+  const QString blueprintPfx = m_PluginList->blueprintPrefix();
+  for (int i = 0; i < pluginCount; ++i) {
+    const auto* p = m_PluginList->getPlugin(i);
+    if (!p || p->group().isEmpty() || p->group() == u"default"_s) continue;
+    const TESData::Classification cls = TESData::classifyPlugin(*p, blueprintPfx);
+    if (cls.zone != TESData::PluginZone::Unknown &&
+        !userZoneNames.contains(cls.zone)) {
+      userZoneNames[cls.zone] = p->group();
+    }
+  }
+
+  // Determine which plugins are "new" (not yet reviewed in a previous run).
+  // Stored in persistent() per-profile so each profile tracks its own state.
+  const QStringList reviewed =
+      m_Organizer->persistent(MOPlugin::BSPlugins::NAME, u"reviewed_plugins"_s, QStringList())
+          .toStringList();
+  const bool hasPreviousRun = !reviewed.isEmpty();
+
+  // If this is a re-run, ask: review new additions only or everything?
+  bool newOnly = false;
+  if (hasPreviousRun) {
+    const int newCount = [&]() {
+      int n = 0;
+      for (int i = 0; i < pluginCount; ++i) {
+        if (const auto* p = m_PluginList->getPlugin(i)) {
+          if (!reviewed.contains(p->name(), Qt::CaseInsensitive)) ++n;
+        }
+      }
+      return n;
+    }();
+
+    if (newCount > 0) {
+      const auto choice = QMessageBox::question(
+          topLevelWidget(), tr("Review Load Order"),
+          tr("You have <b>%1 new plugin(s)</b> since your last review.<br><br>"
+             "Would you like to review new additions only, or do a full review?")
+              .arg(newCount),
+          tr("New additions only"), tr("Full review"), tr("Skip"), 0, 2);
+      if (choice == 2) return;  // Skip
+      newOnly = (choice == 0);
+    } else {
+      return;  // Nothing new — skip dialog entirely
+    }
+  }
+
   // --- Collect patch suggestions (inferred overrides >= 3 records) ---
   QList<GroupReviewDialog::PatchSuggestion> patches;
   for (int i = 0; i < pluginCount; ++i) {
@@ -621,6 +719,9 @@ void PluginsWidget::showGroupReviewDialog()
     // Force-loaded plugins (base game, DLC) don't need group review
     if (plugin->forceLoaded()) continue;
 
+    // In "new only" mode, skip plugins reviewed in a previous run
+    if (newOnly && reviewed.contains(plugin->name(), Qt::CaseInsensitive)) continue;
+
     const bool alreadyGrouped = !plugin->group().isEmpty() &&
                                 plugin->group() != u"default"_s;
     const TESData::Classification cls = TESData::classifyPlugin(*plugin, prefix);
@@ -628,8 +729,13 @@ void PluginsWidget::showGroupReviewDialog()
     GroupReviewDialog::GroupSuggestion gs;
     gs.pluginName      = plugin->name();
     gs.modOrigin       = m_PluginList->getOriginName(i);
-    gs.classification  = cls;
-    gs.preChecked      = cls.confidence >= 70 && !alreadyGrouped;
+    // Override suggested group name with user's custom name for that zone
+    TESData::Classification adjusted = cls;
+    if (userZoneNames.contains(cls.zone)) {
+      adjusted.groupName = userZoneNames.value(cls.zone);
+    }
+    gs.classification  = adjusted;
+    gs.preChecked      = adjusted.confidence >= 70 && !alreadyGrouped;
     gs.alreadyGrouped  = alreadyGrouped;
     groupSuggestions.append(gs);
   }
@@ -668,7 +774,7 @@ void PluginsWidget::showGroupReviewDialog()
     }
 
     if (!patchIndices.isEmpty()) {
-      m_PluginListModel->setGroup(patchIndices, tr("Patches"));
+      m_PluginListModel->setGroup(patchIndices, MOPlugin::pluginINI().groupNamePatches());
     }
   }
 
@@ -682,6 +788,18 @@ void PluginsWidget::showGroupReviewDialog()
   }
 
   m_PluginListModel->invalidate();
+
+  // Record every plugin shown in this review as "seen" for future re-runs
+  QStringList nowReviewed = reviewed;
+  for (int i = 0; i < pluginCount; ++i) {
+    if (const auto* p = m_PluginList->getPlugin(i)) {
+      if (!nowReviewed.contains(p->name(), Qt::CaseInsensitive)) {
+        nowReviewed.append(p->name());
+      }
+    }
+  }
+  m_Organizer->setPersistent(MOPlugin::BSPlugins::NAME, u"reviewed_plugins"_s,
+                              nowReviewed, false);
 }
 
 void PluginsWidget::on_resetGroupsButton_clicked()
@@ -1348,6 +1466,80 @@ void PluginsWidget::synchronizePluginLists(MOBase::IOrganizer* organizer)
                                            state == MOBase::IPluginList::STATE_ACTIVE);
         }
       });
+}
+
+// ---------------------------------------------------------------------------
+// Backup: copies plugins.txt, plugingroups.txt, modlist.txt into
+// <plugin_dir>/backup/<label>/ — read-only snapshot, never modified.
+// ---------------------------------------------------------------------------
+void PluginsWidget::backupLoadOrder(const QString& label) const
+{
+  const QString dest = MOPlugin::BSPluginsINI::backupDir() + u"/" + label;
+  QDir().mkpath(dest);
+
+  const QString profile = m_Organizer->profilePath();
+  const QString moRoot  = QFileInfo(m_Organizer->basePath()).absolutePath();
+
+  // Right panel (plugin load order)
+  for (const QString& f : {u"plugins.txt"_s, u"plugingroups.txt"_s}) {
+    QFile::copy(profile + u"/" + f, dest + u"/" + f);
+  }
+
+  // Left panel (mod list) — read-only copy, we never write to it
+  const QString modlist = profile + u"/modlist.txt";
+  if (QFile::exists(modlist)) {
+    QFile::copy(modlist, dest + u"/modlist.txt");
+  }
+
+  MOBase::log::info("BSPlugins: load order backed up to {}", dest.toStdString());
+  QMessageBox::information(
+      topLevelWidget(), tr("Backup Created"),
+      tr("Your load order has been backed up to:\n%1").arg(dest));
+}
+
+// ---------------------------------------------------------------------------
+// Version check — shown once after MO2's UI is fully loaded.
+// ---------------------------------------------------------------------------
+void PluginsWidget::checkVersionOnStartup()
+{
+  auto& ini = MOPlugin::pluginINI();
+
+  const QString storedVersion = ini.lastPluginVersion();
+  const auto    verInfo       = MOBase::VersionInfo(0, 2, 0, 0);
+  const QString ver           = verInfo.displayString(3);
+
+  const bool isFirstInstall = storedVersion.isEmpty();
+  const bool isUpdate       = !isFirstInstall && storedVersion != ver;
+
+  if (!isFirstInstall && !isUpdate) {
+    return;  // Normal run — nothing to show
+  }
+
+  WelcomeDialog::Trigger trigger =
+      isFirstInstall ? WelcomeDialog::Trigger::FirstInstall
+                     : WelcomeDialog::Trigger::Update;
+
+  WelcomeDialog dlg(trigger, storedVersion, ver, topLevelWidget());
+
+  if (ini.wasGroupNamesMigrated()) {
+    // Caller already ran migrate() — add a note (handled inside WelcomeDialog
+    // future revision; for now append inline)
+  }
+
+  dlg.exec();
+
+  if (dlg.shouldBackup()) {
+    const QString label = QDate::currentDate().toString(u"yyyy-MM-dd") +
+                          u"-v" + ver;
+    backupLoadOrder(label);
+  }
+
+  if (dlg.freshRunRecommended()) {
+    m_Organizer->setPersistent(MOPlugin::BSPlugins::NAME, u"fresh_run_pending"_s, true, false);
+  }
+
+  ini.setLastPluginVersion(ver);
+  ini.setFirstRunDone(true);
 }
 
 }  // namespace BSPluginList

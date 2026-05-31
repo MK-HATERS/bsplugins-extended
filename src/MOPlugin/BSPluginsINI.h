@@ -24,10 +24,10 @@ public:
   [[nodiscard]] static QString pluginDir();
 
   // Returns path to settings.ini inside the plugin subfolder.
-  [[nodiscard]] static QString iniPath() { return pluginDir() + u"/settings.ini"; }
+  [[nodiscard]] static QString iniPath() { return pluginDir() + QStringLiteral("/settings.ini"); }
 
   // Returns path to the backup directory inside the plugin subfolder.
-  [[nodiscard]] static QString backupDir() { return pluginDir() + u"/backup"; }
+  [[nodiscard]] static QString backupDir() { return pluginDir() + QStringLiteral("/backup"); }
 
   // Load / create the INI. Returns true if a schema migration ran that
   // the user should be told about (group names were preserved).
