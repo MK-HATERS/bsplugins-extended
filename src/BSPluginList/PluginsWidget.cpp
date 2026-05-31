@@ -575,9 +575,17 @@ void PluginsWidget::on_sortButton_clicked()
 
 void PluginsWidget::showGroupReviewDialog()
 {
+  // Prewarm conflict caches so getInferredOverrides() below doesn't
+  // trigger lazy doConflictCheck() for every plugin on the GUI thread.
+  const int pluginCount = m_PluginList->pluginCount();
+  for (int i = 0; i < pluginCount; ++i) {
+    if (const auto* p = m_PluginList->getPlugin(i)) {
+      if (p->enabled()) static_cast<void>(p->getInferredOverrides());
+    }
+  }
+
   // --- Collect patch suggestions (inferred overrides >= 3 records) ---
   QList<GroupReviewDialog::PatchSuggestion> patches;
-  const int pluginCount = m_PluginList->pluginCount();
   for (int i = 0; i < pluginCount; ++i) {
     const auto* plugin = m_PluginList->getPlugin(i);
     if (!plugin || !plugin->enabled()) continue;
@@ -625,22 +633,32 @@ void PluginsWidget::showGroupReviewDialog()
   GroupReviewDialog dlg(patches, groupSuggestions, topLevelWidget());
   if (dlg.exec() != QDialog::Accepted) return;
 
-  // --- Apply confirmed patches ---
+  // --- Apply only the patches the user confirmed (not all inferred ones) ---
   const auto confirmedPatches = dlg.confirmedPatches();
   if (!confirmedPatches.isEmpty()) {
-    m_PluginListModel->applyInferredOrdering();
+    QModelIndexList patchIndices;
+    for (const auto& p : confirmedPatches) {
+      const int patchIdx  = m_PluginList->getIndex(p.patchPlugin);
+      const int targetIdx = m_PluginList->getIndex(p.targetPlugin);
+      if (patchIdx < 0 || targetIdx < 0) continue;
 
-    if (dlg.createPatchGroup()) {
-      QModelIndexList patchIndices;
-      for (const auto& p : confirmedPatches) {
-        const int idx = m_PluginList->getIndex(p.patchPlugin);
-        if (idx >= 0) {
-          patchIndices.append(m_PluginListModel->index(idx, 0));
-        }
+      const auto* patch  = m_PluginList->getPlugin(patchIdx);
+      const auto* target = m_PluginList->getPlugin(targetIdx);
+      if (!patch || !target) continue;
+
+      // Only move if the patch currently loads before its target
+      if (patch->priority() < target->priority()) {
+        m_PluginListModel->sendToPriority(
+            {m_PluginListModel->index(patchIdx, 0)}, target->priority() + 1);
       }
-      if (!patchIndices.isEmpty()) {
-        m_PluginListModel->setGroup(patchIndices, tr("Patches"));
+
+      if (dlg.createPatchGroup()) {
+        patchIndices.append(m_PluginListModel->index(patchIdx, 0));
       }
+    }
+
+    if (!patchIndices.isEmpty()) {
+      m_PluginListModel->setGroup(patchIndices, tr("Patches"));
     }
   }
 

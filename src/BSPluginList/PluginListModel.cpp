@@ -384,11 +384,12 @@ QVariant PluginListModel::tooltipData(const QModelIndex& index) const
       const QString prefix = m_Plugins->blueprintPrefix();
       if (!prefix.isEmpty() && baseName.startsWith(prefix, Qt::CaseInsensitive)) {
         const QString mainBase = baseName.mid(prefix.length());
-        for (const QString& ext : {u".esm"_s, u".esp"_s, u".esl"_s}) {
-          if (const auto* paired = m_Plugins->getPluginByName(mainBase + ext)) {
-            toolTip += "<br><b>" + tr("Main plugin") + "</b>: " + paired->name();
-            break;
-          }
+        // MSVC doesn't support range-for over braced initializer_list<QString>
+        const auto* paired = m_Plugins->getPluginByName(mainBase + u".esm"_s);
+        if (!paired) paired = m_Plugins->getPluginByName(mainBase + u".esp"_s);
+        if (!paired) paired = m_Plugins->getPluginByName(mainBase + u".esl"_s);
+        if (paired) {
+          toolTip += "<br><b>" + tr("Main plugin") + "</b>: " + paired->name();
         }
       }
     } else {

@@ -28,11 +28,11 @@ QString GroupReviewDialog::confidenceDots(int confidence)
 
 QString GroupReviewDialog::originLabel(const QString& plugin, const QString& origin)
 {
+  // Plain text only — QTreeWidget items don't render HTML
   if (origin.isEmpty() || origin == plugin) {
     return plugin;
   }
-  return u"%1  <span style='color:gray;font-size:small'>(%2)</span>"_s
-      .arg(plugin, origin);
+  return u"%1  (%2)"_s.arg(plugin, origin);
 }
 
 // ---------------------------------------------------------------------------
@@ -210,6 +210,7 @@ void GroupReviewDialog::buildGroupTab(const QList<GroupSuggestion>& groups)
     item->setText(2, confidenceDots(g.classification.confidence));
     item->setText(3, g.classification.reason);
     item->setData(0, Qt::UserRole, g.pluginName);
+    item->setData(1, Qt::UserRole, g.classification.groupName);  // clean name
   }
 }
 
@@ -241,7 +242,8 @@ QList<GroupReviewDialog::GroupSuggestion> GroupReviewDialog::confirmedGroups() c
     if (item->checkState(0) == Qt::Checked) {
       GroupSuggestion g;
       g.pluginName             = item->data(0, Qt::UserRole).toString();
-      g.classification.groupName = item->text(1).remove(u"📦 "_s);
+      // Group name stored separately in UserRole+1 to avoid stripping display prefix
+      g.classification.groupName = item->data(1, Qt::UserRole).toString();
       result.append(g);
     }
   }
