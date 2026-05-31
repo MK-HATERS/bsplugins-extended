@@ -27,7 +27,10 @@ target_include_directories(bsplugins
 target_link_libraries(bsplugins PRIVATE ryml)
 
 # --- Dependencies ---------------------------------------------------------
-# uibase: enable deprecated include so game_features/ headers are reachable
+# uibase: enable deprecated include so game_features/ headers are reachable.
+# Qt6::Core and Qt6::Widgets come transitively via mo2::uibase (it is itself
+# a Qt library and exports them as INTERFACE dependencies).
+# fmt and zlib are also transitive through uibase/bsatk.
 set(MO2_CMAKE_DEPRECATED_UIBASE_INCLUDE ON)
 find_package(mo2-uibase CONFIG REQUIRED)
 target_link_libraries(bsplugins PRIVATE mo2::uibase)
@@ -38,18 +41,15 @@ target_link_libraries(bsplugins PRIVATE mo2::bsatk)
 find_package(mo2-lootcli-header CONFIG REQUIRED)
 target_link_libraries(bsplugins PRIVATE mo2::lootcli-header)
 
-# Qt: must be found before mo2_configure_plugin so AUTOMOC picks up all modules
-find_package(Qt6 COMPONENTS Core Widgets WebEngineWidgets REQUIRED)
-target_link_libraries(bsplugins PRIVATE Qt6::Core Qt6::Widgets Qt6::WebEngineWidgets)
+# WebEngineWidgets is only used by this plugin — not provided transitively
+find_package(Qt6 COMPONENTS WebEngineWidgets REQUIRED)
+target_link_libraries(bsplugins PRIVATE Qt6::WebEngineWidgets)
 
-find_package(Boost CONFIG REQUIRED COMPONENTS thread container)
-target_link_libraries(bsplugins PRIVATE Boost::headers Boost::thread Boost::container)
-
-find_package(fmt CONFIG REQUIRED)
-target_link_libraries(bsplugins PRIVATE fmt::fmt)
-
-find_package(ZLIB REQUIRED)
-target_link_libraries(bsplugins PRIVATE ZLIB::ZLIB)
+# Boost::thread has compiled parts we use directly (boost::thread::future).
+# The header-only Boost components (signals2, container, range) come
+# transitively once mo2-bsatk-config calls find_dependency(Boost ...).
+find_package(Boost CONFIG REQUIRED COMPONENTS thread)
+target_link_libraries(bsplugins PRIVATE Boost::thread)
 
 # --- MO2 plugin configuration ---------------------------------------------
 # mo2_configure_plugin handles: source glob, C++23, /MP, /permissive-, LTCG,
