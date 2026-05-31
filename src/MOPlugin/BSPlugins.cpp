@@ -28,7 +28,7 @@ BSPlugins::requirements() const
 
 QString BSPlugins::author() const
 {
-  return u"Parapets"_s;
+  return u"MK-HATERS (based on work by Parapets and Alaxouche)"_s;
 }
 
 QString BSPlugins::description() const

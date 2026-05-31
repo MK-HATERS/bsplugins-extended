@@ -9,6 +9,7 @@ A rework and recompilation of the base MO2 bsplugins addon with improved stabili
 ## What's Different From the Original
 
 ### Group Management
+
 - Added `Reset Groups` — clears group structure without changing load order
 - Added `Merge Group` — combines two groups in one action
 - Added `Clean Groups` — removes empty groups automatically
@@ -20,6 +21,7 @@ A rework and recompilation of the base MO2 bsplugins addon with improved stabili
 - Added option to fully disable the group system
 
 ### Load Order
+
 - Restored the **Lock Load Order Position** option (removed in upstream bsplugins)
 - Added restore behaviour for load order snapshots after external executable runs
 - Added protection against unwanted external load order changes
@@ -31,6 +33,7 @@ A rework and recompilation of the base MO2 bsplugins addon with improved stabili
 This version implements the full plugin type rules researched by MO2 for Starfield.
 
 ### Blueprint Plugins (`blueprintships-*.esm`)
+
 Blueprint plugins work like archives — when a regular plugin is loaded, its paired `blueprintships-<name>.esm` is automatically force-enabled alongside it.
 
 - **Auto force-enable/disable** — blueprint plugins are force-disabled by default and activate automatically when their paired main plugin is enabled or disabled
@@ -40,8 +43,9 @@ Blueprint plugins work like archives — when a regular plugin is loaded, its pa
 - **CCC file support** — plugins manually added to the CCC file remain force-enabled regardless
 
 **Four tooltip states** matching MO2's rules:
+
 | State | Meaning |
-|---|---|
+| --- | --- |
 | Force-disabled + flagged + prefixed | Must be enabled by a paired main plugin |
 | Force-disabled + flagged + not prefixed | Not using the blueprint prefix — game can't load it |
 | Force-disabled + prefixed + not flagged | No blueprint flag — invalid blueprint file |
@@ -50,6 +54,7 @@ Blueprint plugins work like archives — when a regular plugin is loaded, its pa
 **Problem detection** — the warning icon is shown for blueprints in invalid states (flagged but wrongly named, or named like a blueprint but missing the flag).
 
 ### Medium Plugins (ESH, `0x400` flag)
+
 Starfield introduced medium-sized plugins that sit between full plugins and ESL plugins. This is a Starfield-exclusive plugin type — not enabled for other games.
 
 - Detected from the `0x400` TES4 header flag via `GamePlugins::mediumPluginsAreSupported()`
@@ -58,21 +63,25 @@ Starfield introduced medium-sized plugins that sit between full plugins and ESL 
 - Warning shown if a plugin is incorrectly flagged as both light (ESL) and medium simultaneously
 
 ### Overlay Plugins (`0x200` flag)
+
 - Overlay plugin detection was previously hardcoded to disabled — now correctly enabled for Starfield and Fallout 4
 - Overlay plugins display `XX` in the mod index column (no record space consumed)
 
 ### Master-Child Zone Isolation
+
 Following MO2's rules, master-dependency constraints are only enforced within the same blueprint zone. A regular master plugin does not affect the ordering of blueprint plugins and vice versa.
 
 ### ESL Force-Disable on Unsupported Games
+
 If a `.esl` file is present for a game that does not support light plugins, it is automatically force-disabled (matching MO2 behaviour) rather than being treated as a regular plugin and potentially corrupting the load order.
 
 ### Plugin Count Breakdown
+
 The active plugin counter tooltip now shows a full breakdown by type — ESMs, ESPs, ESHs, ESLs, Blueprint masters — with active and total counts for each, matching MO2's counter display. ESH and Blueprint rows only appear when the current game supports those plugin types.
 
 ### Inferred Patch Detection and Smart Sort
 
-Conflict analysis now identifies when a plugin overrides many records from another plugin without declaring it as a formal master — a strong signal that it is a patch for that plugin and needs to load after it.
+Conflict analysis identifies when a plugin overrides many records from another plugin without declaring it as a formal master — a strong signal that it is a patch for that plugin and needs to load after it.
 
 - **Warning tooltip** — on any plugin overriding ≥ 3 records from another plugin without mastering it: *"Overrides N record(s) from [Plugin X] — if this patches [Plugin X], ensure it loads after it"*
 - **Problem flag** — warning icon shown when the count reaches ≥ 5 records (a likely accidental load order issue)
@@ -81,16 +90,30 @@ Conflict analysis now identifies when a plugin overrides many records from anoth
 This works entirely from record-level conflict data — no filename heuristics needed — and catches cases like two mods both editing the same NPC or weapon record where one is clearly a compatibility patch for the other.
 
 ### ONAM Conflict Detection
+
 Navmesh, landscape, dialog, and scene record overrides are declared in the TES4 `ONAM` subrecord. bsplugins-extended reads this list and registers those overrides in the conflict system, so navmesh/landscape conflicts are detected without requiring the slow full CELL/WRLD group scan.
 
 ### ObjectID Range Validation
+
 ESL plugins must keep record ObjectIDs ≤ `0xFFF`; ESH plugins must keep them ≤ `0xFF`. If a plugin violates these limits (indicating a broken Creation Kit export), the warning icon is shown and the tooltip explains the issue. The `nextObjectId` field in the HEDR subrecord is used as a fast pre-check.
 
 ### Plugin Header Version
+
 The `headerVersion` field (the float at the start of the HEDR subrecord) is now parsed and exposed via `IPluginList::headerVersion()`. This returns `0.96` for Starfield plugins, `0.95` for FO4, and so on — correctly implemented instead of always returning `-1`.
 
 ### LOOT Integration
+
 LOOT sorting is fully supported for Starfield (re-enabled in LOOT v0.29.0). The LOOT report analysis — dirty/clean plugin info, incompatibilities, missing masters — is displayed inline in the plugin list tooltip. Blueprint and medium plugins are handled transparently by the LOOT library; no special configuration is required.
+
+---
+
+## Credits
+
+This project is a fork of work by several authors, all released under GPL v3.
+
+- **[Exit-9B (Parapets)](https://github.com/Exit-9B/modorganizer-bsplugins)** — original bsplugins plugin; foundational architecture, conflict detection, group management, LOOT integration
+- **[Alaxouche](https://github.com/Alaxouche/modorganizer-bsplugins-extended)** — bsplugins-extended fork; group tools, stability improvements, restored lock position option
+- **MK-HATERS** — this fork; full Starfield plugin type support (blueprint, medium, overlay), latest MO2 compatibility, ONAM conflict detection, inferred patch analysis, smart sort
 
 ---
 
