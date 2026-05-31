@@ -1782,6 +1782,14 @@ void PluginList::applyInferredOrdering()
 {
   static constexpr int kThreshold = 3;
 
+  // Prewarm conflict caches first — if the cache is cold the snapshot will
+  // be empty for every plugin and the sort will silently do nothing.
+  for (const auto& plugin : m_Plugins) {
+    if (plugin->enabled()) {
+      static_cast<void>(plugin->getInferredOverrides());
+    }
+  }
+
   // Snapshot all inferred overrides before any priority changes so that
   // mid-sort cache invalidations (from setPriority) don't alter decisions
   // for later plugins in the same pass.

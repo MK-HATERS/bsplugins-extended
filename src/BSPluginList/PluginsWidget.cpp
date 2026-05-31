@@ -567,6 +567,18 @@ void PluginsWidget::on_sortButton_clicked()
 
     importLootGroups();
     m_PluginListModel->invalidate();
+
+    // Offer to follow LOOT sort with conflict-based patch ordering
+    const auto reply = QMessageBox::question(
+        topLevelWidget(), tr("Fix Patch Load Order"),
+        tr("LOOT sort complete.\n\n"
+           "Would you also like to fix patch load order?\n"
+           "This detects mods that override records from another mod without\n"
+           "declaring it as a master, and moves them to load after it."),
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    if (reply == QMessageBox::Yes) {
+      m_PluginListModel->applyInferredOrdering();
+    }
   }
 }
 

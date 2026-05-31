@@ -100,7 +100,7 @@ void PluginListContextMenu::addAllItemsMenu()
 
   allItemsMenu->addSeparator();
 
-  allItemsMenu->addAction(tr("Apply inferred load order"), [this]() {
+  allItemsMenu->addAction(tr("Fix Patch Load Order"), [this]() {
     m_Model->applyInferredOrdering();
   });
 

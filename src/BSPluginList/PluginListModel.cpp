@@ -376,6 +376,34 @@ QVariant PluginListModel::tooltipData(const QModelIndex& index) const
                  "</i></b>";
     }
 
+    // Blueprint pair cross-reference
+    if (plugin->isBlueprintPrefixed()) {
+      // This is a blueprintships-X.esm — show which main plugin it pairs with
+      const QString baseName = QFileInfo(plugin->name()).completeBaseName();
+      // strip the prefix to get the main plugin base name
+      const QString prefix = m_Plugins->blueprintPrefix();
+      if (!prefix.isEmpty() && baseName.startsWith(prefix, Qt::CaseInsensitive)) {
+        const QString mainBase = baseName.mid(prefix.length());
+        for (const QString& ext : {u".esm"_s, u".esp"_s, u".esl"_s}) {
+          if (const auto* paired = m_Plugins->getPluginByName(mainBase + ext)) {
+            toolTip += "<br><b>" + tr("Main plugin") + "</b>: " + paired->name();
+            break;
+          }
+        }
+      }
+    } else {
+      // Regular plugin — check if a blueprintships counterpart exists
+      const QString prefix = m_Plugins->blueprintPrefix();
+      if (!prefix.isEmpty()) {
+        const QString blueprintName =
+            prefix + QFileInfo(plugin->name()).completeBaseName() + u".esm"_s;
+        if (const auto* paired = m_Plugins->getPluginByName(blueprintName)) {
+          toolTip +=
+              "<br><b>" + tr("Blueprint counterpart") + "</b>: " + paired->name();
+        }
+      }
+    }
+
     if (!plugin->author().isEmpty()) {
       toolTip += "<br><b>" + tr("Author") + "</b>: " + truncateString(plugin->author());
     }

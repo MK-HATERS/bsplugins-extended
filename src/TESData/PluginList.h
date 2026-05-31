@@ -76,6 +76,8 @@ public:
   // Safe to call after a LOOT sort or manually from the UI.
   void applyInferredOrdering();
 
+  [[nodiscard]] const QString& blueprintPrefix() const { return m_BlueprintPrefix; }
+
   void setEnabled(int id, bool enable);
   void setEnabled(const std::vector<int>& ids, bool enable);
   void toggleState(const std::vector<int>& ids);
