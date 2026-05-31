@@ -1072,8 +1072,22 @@ void PluginListModel::setEnabledAll(bool enabled)
 
 void PluginListModel::applyInferredOrdering()
 {
+  beginResetModel();
   clearRoleCaches();
   m_Plugins->applyInferredOrdering();
+
+  // Pre-warm conflict caches so the next repaint doesn't trigger lazy
+  // doConflictCheck() for every priority-invalidated plugin on the GUI thread.
+  const int count = m_Plugins->pluginCount();
+  for (int i = 0; i < count; ++i) {
+    if (const auto* p = m_Plugins->getPlugin(i)) {
+      if (p->enabled()) {
+        p->getInferredOverrides();
+      }
+    }
+  }
+
+  endResetModel();
 }
 
 void PluginListModel::setEnabled(const QModelIndexList& indices, bool enabled)

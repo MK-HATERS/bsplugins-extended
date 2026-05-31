@@ -1782,43 +1782,55 @@ void PluginList::applyInferredOrdering()
 {
   static constexpr int kThreshold = 3;
 
-  bool changed = false;
-  // Run multiple passes to propagate chains (A→B→C).
-  for (int pass = 0; pass < 3; ++pass) {
-    bool passChanged = false;
-    for (int i = 0; i < static_cast<int>(m_PluginsByPriority.size()); ++i) {
-      const int idx    = m_PluginsByPriority[i];
-      const auto& plug = m_Plugins.at(idx);
-
-      if (!plug->enabled() || plug->forceLoaded()) {
-        continue;
-      }
-
-      const auto& inferred = plug->getInferredOverrides();
-      for (auto it = inferred.constBegin(); it != inferred.constEnd(); ++it) {
-        if (it.value() < kThreshold) {
-          continue;
-        }
-        const auto& other = m_Plugins.at(it.key());
-        if (!other->enabled()) {
-          continue;
-        }
-        // If this plugin currently loads BEFORE the one it infers it patches,
-        // move it just after.
-        if (plug->priority() < other->priority()) {
-          moveToPriority({idx}, other->priority() + 1);
-          passChanged = true;
-          changed     = true;
-          break;  // priority changed; restart inner scan for this plugin
-        }
-      }
-    }
-    if (!passChanged) {
-      break;
-    }
+  // Snapshot all inferred overrides before any priority changes so that
+  // mid-sort cache invalidations (from setPriority) don't alter decisions
+  // for later plugins in the same pass.
+  const int n = static_cast<int>(m_Plugins.size());
+  std::vector<QMap<int, int>> snapshot(n);
+  for (int i = 0; i < n; ++i) {
+    snapshot[i] = m_Plugins.at(i)->getInferredOverrides();
   }
 
-  if (changed) {
+  bool anyChanged = false;
+
+  // Up to 3 bubble passes over m_PluginsByPriority to propagate A→B→C chains.
+  // Direct array manipulation avoids the per-call computeCompileIndices and
+  // refreshLoadOrder overhead of moveToPriority().
+  for (int pass = 0; pass < 3; ++pass) {
+    bool passChanged = false;
+
+    for (int p = 1; p < static_cast<int>(m_PluginsByPriority.size()); ++p) {
+      const int idxA    = m_PluginsByPriority[p - 1];
+      const int idxB    = m_PluginsByPriority[p];
+      const auto& plugA = m_Plugins.at(idxA);
+      const auto& plugB = m_Plugins.at(idxB);
+
+      if (!plugA->enabled() || !plugB->enabled()) continue;
+      if (plugA->forceLoaded() || plugB->forceLoaded()) continue;
+
+      // Don't swap across the blueprint zone boundary
+      const bool aBlueprint =
+          plugA->isBlueprintFlagged() || plugA->isBlueprintPrefixed();
+      const bool bBlueprint =
+          plugB->isBlueprintFlagged() || plugB->isBlueprintPrefixed();
+      if (aBlueprint != bBlueprint) continue;
+
+      // If A overrides >= threshold records from B (without mastering B),
+      // A is likely a patch for B and should load after B — swap them.
+      if (snapshot[idxA].value(idxB, 0) >= kThreshold) {
+        std::swap(m_PluginsByPriority[p - 1], m_PluginsByPriority[p]);
+        passChanged = true;
+        anyChanged  = true;
+      }
+    }
+
+    if (!passChanged) break;
+  }
+
+  if (anyChanged) {
+    for (int i = 0; i < static_cast<int>(m_PluginsByPriority.size()); ++i) {
+      m_Plugins.at(m_PluginsByPriority[i])->setPriority(i);
+    }
     computeCompileIndices();
     refreshLoadOrder();
   }
