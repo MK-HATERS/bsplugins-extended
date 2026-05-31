@@ -651,7 +651,7 @@ void PluginsWidget::showGroupReviewDialog()
   // Determine which plugins are "new" (not yet reviewed in a previous run).
   // Stored in persistent() per-profile so each profile tracks its own state.
   const QStringList reviewed =
-      m_Organizer->persistent(MOPlugin::BSPlugins::NAME, u"reviewed_plugins"_s, QStringList())
+      m_Organizer->persistent(BSPlugins::NAME, u"reviewed_plugins"_s, QStringList())
           .toStringList();
   const bool hasPreviousRun = !reviewed.isEmpty();
 
@@ -798,7 +798,7 @@ void PluginsWidget::showGroupReviewDialog()
       }
     }
   }
-  m_Organizer->setPersistent(MOPlugin::BSPlugins::NAME, u"reviewed_plugins"_s,
+  m_Organizer->setPersistent(BSPlugins::NAME, u"reviewed_plugins"_s,
                               nowReviewed, false);
 }
 
@@ -1535,7 +1535,7 @@ void PluginsWidget::checkVersionOnStartup()
   }
 
   if (dlg.freshRunRecommended()) {
-    m_Organizer->setPersistent(MOPlugin::BSPlugins::NAME, u"fresh_run_pending"_s, true, false);
+    m_Organizer->setPersistent(BSPlugins::NAME, u"fresh_run_pending"_s, true, false);
   }
 
   ini.setLastPluginVersion(ver);
