@@ -5,6 +5,8 @@
 #include <QDir>
 #include <QFileInfo>
 
+using namespace Qt::Literals::StringLiterals;
+
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 

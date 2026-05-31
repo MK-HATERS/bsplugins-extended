@@ -15,6 +15,7 @@ namespace TESData
 {
 
 class PluginList;
+struct Classification;  // forward-declared so the friend declaration below compiles
 
 class FileInfo
 {
@@ -271,6 +272,11 @@ public:
 
 private:
   [[nodiscard]] Conflicts doConflictCheck() const;
+
+  // classifyPlugin() writes into the mutable classification cache fields
+  // inside m_Metadata. Declaring it a friend avoids exposing those cache
+  // internals through public accessors while still allowing lazy caching.
+  friend Classification classifyPlugin(const FileInfo&, const QString&);
 
   PluginList* m_PluginList;
   FileSystemData m_FileSystemData;
