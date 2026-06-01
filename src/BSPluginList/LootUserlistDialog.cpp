@@ -14,10 +14,10 @@
 #include <QTextStream>
 #include <QVBoxLayout>
 
-using namespace Qt::Literals::StringLiterals;
-
 namespace BSPluginList
 {
+
+using namespace Qt::Literals::StringLiterals;
 
 // ---------------------------------------------------------------------------
 // Very simple userlist.yaml read/write.

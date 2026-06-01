@@ -5,8 +5,6 @@
 #include <QDir>
 #include <QFileInfo>
 
-using namespace Qt::Literals::StringLiterals;
-
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
@@ -251,7 +249,7 @@ QList<BSPluginsINI::CustomGroup> BSPluginsINI::customGroups() const
     g.name        = m_Settings->value(u"%1/name"_s.arg(section)).toString();
     g.zone        = m_Settings->value(u"%1/zone"_s.arg(section)).toString();
     g.recordTypes = m_Settings->value(u"%1/records"_s.arg(section))
-                        .toString().split(u','_s, Qt::SkipEmptyParts);
+                        .toString().split(u',', Qt::SkipEmptyParts);
     g.threshold   = m_Settings->value(u"%1/threshold"_s.arg(section), 15).toInt();
     if (!g.name.isEmpty()) m_CustomGroupsCache.append(std::move(g));
   }
@@ -272,7 +270,7 @@ void BSPluginsINI::setCustomGroups(const QList<CustomGroup>& groups)
     const QString s = u"CustomGroup_%1"_s.arg(i);
     m_Settings->setValue(u"%1/name"_s.arg(s),      groups.at(i).name);
     m_Settings->setValue(u"%1/zone"_s.arg(s),      groups.at(i).zone);
-    m_Settings->setValue(u"%1/records"_s.arg(s),   groups.at(i).recordTypes.join(u','_s));
+    m_Settings->setValue(u"%1/records"_s.arg(s),   groups.at(i).recordTypes.join(u','));
     m_Settings->setValue(u"%1/threshold"_s.arg(s), groups.at(i).threshold);
   }
   m_Settings->sync();

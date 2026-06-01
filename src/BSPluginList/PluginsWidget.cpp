@@ -13,7 +13,6 @@
 #include "MOPlugin/BSPlugins.h"
 #include "MOPlugin/BSPluginsINI.h"
 #include "TESData/PluginClassifier.h"
-#include "TESData/TypeStringNames.h"
 #include "UpdateChecker.h"
 #include "UpdateDialog.h"
 #include "WelcomeDialog.h"
@@ -29,6 +28,7 @@
 
 #include <QApplication>
 #include <QClipboard>
+#include <QDesktopServices>
 #include <QGuiApplication>
 #include <QCryptographicHash>
 #include <QDate>
@@ -1927,14 +1927,17 @@ void PluginsWidget::refreshInfoTab(const TESData::FileInfo* plugin)
       for (int i = 0; i < shown; ++i) {
         const quint32 key = sorted[i].first;
         const int cnt = sorted[i].second;
-        // Decode 4-byte type back to string
-        const QString code = QString::fromLatin1(QByteArray(
-            reinterpret_cast<const char*>(&key), 4));
-        const QString name = TESData::formTypeName(code);
+        // Decode 4-byte little-endian type tag back to ASCII string
+        char buf[5] = {};
+        buf[0] = static_cast<char>(key & 0xFF);
+        buf[1] = static_cast<char>((key >> 8)  & 0xFF);
+        buf[2] = static_cast<char>((key >> 16) & 0xFF);
+        buf[3] = static_cast<char>((key >> 24) & 0xFF);
+        const QString code = QString::fromLatin1(buf, 4);
         const int pct = total > 0 ? cnt * 100 / total : 0;
         html += u"<tr><td>%1</td><td align='right'>%2</td>"
                 u"<td>&nbsp;<span style='color:gray'>%3%</span></td></tr>"_s
-                    .arg(name, QString::number(cnt), QString::number(pct));
+                    .arg(code, QString::number(cnt), QString::number(pct));
       }
       if (sorted.size() > 5) {
         html += u"<tr><td colspan='3'><i>…and %1 more types</i></td></tr>"_s
