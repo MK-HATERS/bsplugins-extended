@@ -81,7 +81,7 @@ static QString parseGroup(const QStringList& block)
     const QString t = line.trimmed();
     if (t.startsWith(u"group:"_s)) {
       QString g = t.mid(6).trimmed();
-      g.remove(u'\''_s);
+      g.remove(u'\'');
       return g;
     }
   }

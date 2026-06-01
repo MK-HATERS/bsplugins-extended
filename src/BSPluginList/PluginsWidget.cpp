@@ -2062,7 +2062,7 @@ QWidget* PluginsWidget::buildSettingsTab(QWidget* parent)
       const QString label = cg.recordTypes.isEmpty()
           ? u"★ %1  →  %2"_s.arg(cg.name, cg.zone)
           : u"★ %1  →  %2  [%3 ≥%4%]"_s.arg(
-                cg.name, cg.zone, cg.recordTypes.join(u','_s),
+                cg.name, cg.zone, cg.recordTypes.join(u','),
                 QString::number(cg.threshold));
       cgListPtr->addItem(label);
     }
