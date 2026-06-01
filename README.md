@@ -43,8 +43,11 @@ Select any plugin to see:
 - **Mod origin** — which MO2 mod provides this plugin.
 - **Type flags** — ESM, ESL, ESH, Overlay, Blueprint.
 - **Classification** — auto-detected zone and group with a confidence indicator (●●●●● green/amber/gray scale) and the reasoning behind it.
+- **LOOT masterlist status** — whether the plugin has LOOT ordering rules. Plugins not in the masterlist show an **[Add rule…]** link that opens the LOOT userlist editor inline.
 - **Conflicts** — what this plugin overrides, what overrides it.
 - **Inferred patch target** — if this plugin overrides many records from another without mastering it, the target is shown here.
+- **Master chain** — the plugin's declared master list, with one level of grandmasters shown inline for dependency tracing.
+- **Record type breakdown** — top 5 record types by count with percentages, so you can see at a glance what a plugin actually edits (armor, lighting, quests, etc.).
 - **Blueprint pair** — for blueprint plugins, the paired main plugin is shown.
 - **Mod-author `.bs` hint** — if the mod author shipped a `.bs` hint file, its contents are shown with an `[Edit]` link.
 
@@ -58,7 +61,8 @@ All BSPlugins-specific messages (warnings, classification decisions, update chec
 - **Custom Groups** — create groups with optional record-type detection rules. Custom groups are checked before built-in classification.
 - **Patch threshold** — how many shared records are needed before a plugin is flagged as a likely patch.
 - **Updates** — optional Nexus URL, manual update check.
-- **Mod Author Tools** — generate a `.bs` hint file for the selected plugin.
+- **Mod Author Tools** — generate a `.bs` hint file for the selected plugin, or batch-generate for every plugin in a mod at once.
+- **Snapshots** — save named restore points ("pre-LOOT", "stable-march") and restore them later without touching MO2's profile system.
 - **Export** — copy a Markdown table of all plugins (group, zone, confidence, reason) to the clipboard for sharing or load-order help posts.
 
 ---
@@ -215,6 +219,41 @@ The **Copy group summary to clipboard** button in the Settings tab produces a Ma
 
 Paste this into Nexus comments, Reddit posts, or a text file to diff before/after sorting.
 
+### LOOT Userlist Editor
+
+Clicking **[Add rule…]** next to a plugin's LOOT status in the Info tab opens a structured editor for that plugin's entry in `userlist.yaml`. No manual YAML editing required.
+
+Fields:
+
+- **LOOT Group** — assign the plugin to a LOOT load-order group
+- **Load after** — force this plugin to load after the listed plugins
+- **Requires** — LOOT will warn if any listed plugins are missing or disabled
+- **Conflicts with** — LOOT will warn if any listed plugins are also active
+
+Rules take effect on the next LOOT sort. The userlist.yaml path is resolved automatically from LOOT's AppData folder for the current game.
+
+### Named Load Order Snapshots
+
+The **Snapshots** section in the Settings tab lets you save and restore named copies of your entire load order:
+
+- **Save snapshot…** — name it anything ("pre-LOOT-run-3", "broken-test"), saves `plugins.txt`, `loadorder.txt`, `plugingroups.txt`, and `lockedorder.txt` into `plugins/bsplugins/snapshots/<name>/`.
+- **Restore snapshot…** — lists all saved snapshots; choose one and the current load order is replaced and the plugin list reloads.
+
+Existing snapshot files are never overwritten by a new save — you must delete the folder manually if you want to reuse a name.
+
+### Load Order Health Score
+
+Every time the plugin list refreshes (mod toggle, profile switch, LOOT sort), the Log tab shows a one-line health score:
+
+```text
+Plugin list updated — 312 active | Patches: 47 ok, 3 need attention | Unclassified: 12 | Not in LOOT masterlist: 89
+```
+
+- **Patches ok** — inferred patches that already load after their target
+- **Need attention** — inferred patches loading before their target (run Patch Sort to fix)
+- **Unclassified** — plugins the classifier couldn't place (open Group Review to assign)
+- **Not in LOOT masterlist** — plugins LOOT has no rules for (use the userlist editor to add rules)
+
 ---
 
 ## What Changed From the Original bsplugins
@@ -243,6 +282,12 @@ This fork adds on top of both:
 | Update checker | ✗ | ✓ GitHub/Nexus version check on startup |
 | Lock load order position | Removed upstream | ✓ Restored |
 | Group reset / merge / clean | ✗ | ✓ Mass group operations |
+| LOOT userlist editor | ✗ | ✓ Add/edit per-plugin LOOT rules without editing YAML |
+| Named load order snapshots | ✗ | ✓ Save/restore named restore points |
+| Record type breakdown | ✗ | ✓ Top record types shown in Info tab |
+| Master chain view | ✗ | ✓ Dependency tree in Info tab |
+| Load order health score | ✗ | ✓ Patch/unclassified/LOOT coverage count on refresh |
+| Batch .bs generator | ✗ | ✓ Generate hint files for all plugins in a mod |
 | Latest MO2 cmake_common | ✗ | ✓ `mo2_configure_plugin`, vcpkg manifest |
 
 ---

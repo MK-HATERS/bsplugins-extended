@@ -9,9 +9,11 @@
 #include "CustomGroupDialog.h"
 #include "GroupManagerDialog.h"
 #include "GroupReviewDialog.h"
+#include "LootUserlistDialog.h"
 #include "MOPlugin/BSPlugins.h"
 #include "MOPlugin/BSPluginsINI.h"
 #include "TESData/PluginClassifier.h"
+#include "TESData/TypeStringNames.h"
 #include "UpdateChecker.h"
 #include "UpdateDialog.h"
 #include "WelcomeDialog.h"
@@ -110,7 +112,26 @@ PluginsWidget::PluginsWidget(MOBase::IOrganizer* organizer,
       // Handle [Edit] link for .bs file editing
       connect(m_InfoBrowser, &QTextBrowser::anchorClicked, this,
               [this](const QUrl& url) {
-                if (url.toString() != u"edit_bs"_s) return;
+                const QString href = url.toString();
+                // Open LOOT userlist editor for the selected plugin
+                if (href == u"add_loot_rule"_s) {
+                  const auto sel = ui->pluginList->selectionModel()->selectedIndexes();
+                  if (sel.isEmpty()) return;
+                  const auto* plugin = m_PluginList->getPlugin(
+                      sel.first().data(PluginListModel::IndexRole).toInt());
+                  if (!plugin) return;
+                  const auto profilePath = QDir(m_Organizer->profilePath());
+                  const QString userlist = QDir::cleanPath(
+                      profilePath.absoluteFilePath(u"../../../LOOT/games/%1/userlist.yaml"_s
+                          .arg(m_Organizer->managedGame()
+                                   ? m_Organizer->managedGame()->gameName()
+                                   : u"Starfield"_s)));
+                  LootUserlistDialog dlg(plugin->name(), userlist, topLevelWidget());
+                  if (dlg.exec() == QDialog::Accepted)
+                    bsLog(tr("LOOT rule saved for %1.").arg(plugin->name()));
+                  return;
+                }
+                if (href != u"edit_bs"_s) return;
                 // Find the currently-selected plugin's .bs path and open it
                 const auto sel = ui->pluginList->selectionModel()->selectedIndexes();
                 if (sel.isEmpty()) return;
@@ -356,28 +377,27 @@ PluginsWidget::PluginsWidget(MOBase::IOrganizer* organizer,
   connect(m_PluginList, &TESData::PluginList::pluginsListChanged, this,
           &PluginsWidget::updatePluginCount);
 
-  // When the plugin list refreshes, log warnings for problematic plugins
+  // When the plugin list refreshes, log warnings and a health score
   connect(m_PluginList, &TESData::PluginList::pluginsListChanged, this, [this]() {
     BSPluginsLog::instance().clear();
-    bsLog(tr("Plugin list updated — %1 plugins active.")
-              .arg(m_PluginList->pluginCount()));
     const int count = m_PluginList->pluginCount();
+
+    // Per-plugin warnings
+    int missingMasterCount = 0;
+    int invalidFormIdCount = 0;
     for (int i = 0; i < count; ++i) {
       const auto* p = m_PluginList->getPlugin(i);
       if (!p || !p->enabled()) continue;
       if (p->hasInvalidFormIds()) {
-        bsWarn(tr("ESL/ESH with out-of-range ObjectIDs — broken CK export"),
-               p->name());
+        ++invalidFormIdCount;
+        bsWarn(tr("ESL/ESH with out-of-range ObjectIDs — broken CK export"), p->name());
       }
-      if (p->isBlueprintFlagged() && !p->isBlueprintPrefixed()) {
-        bsWarn(tr("Blueprint-flagged but wrong filename prefix — game can't load it"),
-               p->name());
-      }
-      if (p->isBlueprintPrefixed() && !p->isBlueprintFlagged()) {
-        bsWarn(tr("Blueprint-prefixed but missing blueprint flag — unintended autoload"),
-               p->name());
-      }
+      if (p->isBlueprintFlagged() && !p->isBlueprintPrefixed())
+        bsWarn(tr("Blueprint-flagged but wrong filename prefix — game can't load it"), p->name());
+      if (p->isBlueprintPrefixed() && !p->isBlueprintFlagged())
+        bsWarn(tr("Blueprint-prefixed but missing blueprint flag — unintended autoload"), p->name());
       if (p->hasMissingMasters()) {
+        ++missingMasterCount;
         bsCrit(tr("Missing masters: %1")
                    .arg(QStringList(p->missingMasters().begin(),
                                     p->missingMasters().end())
@@ -385,6 +405,40 @@ PluginsWidget::PluginsWidget(MOBase::IOrganizer* organizer,
                p->name());
       }
     }
+
+    // Health score: count patches in order, patches needing attention, unclassified
+    const int threshold    = MOPlugin::pluginINI().patchThreshold();
+    const int dispThresh   = std::max(1, threshold / 6);
+    const QString prefix   = m_PluginList->blueprintPrefix();
+    int patchesOk = 0, patchesWrong = 0, unclassified = 0, noLoot = 0;
+    for (int i = 0; i < count; ++i) {
+      const auto* p = m_PluginList->getPlugin(i);
+      if (!p || !p->enabled() || p->forceLoaded()) continue;
+
+      // Inferred patch status
+      const auto& inf = p->getInferredOverrides();
+      const auto maxIt = std::max_element(inf.constBegin(), inf.constEnd());
+      if (maxIt != inf.constEnd() && maxIt.value() >= dispThresh) {
+        const auto* target = m_PluginList->getPlugin(maxIt.key());
+        if (target) {
+          if (p->priority() > target->priority()) ++patchesOk;
+          else                                     ++patchesWrong;
+        }
+      }
+
+      // Classification
+      const TESData::Classification cls = TESData::classifyPlugin(*p, prefix);
+      if (cls.zone == TESData::PluginZone::Unknown) ++unclassified;
+
+      // LOOT masterlist coverage
+      if (!m_PluginList->getLootReport(p->name())) ++noLoot;
+    }
+
+    bsLog(tr("Plugin list updated — %1 active | "
+             "Patches: %2 ok, %3 need attention | "
+             "Unclassified: %4 | Not in LOOT masterlist: %5")
+              .arg(count).arg(patchesOk).arg(patchesWrong)
+              .arg(unclassified).arg(noLoot));
   });
 
   connect(m_PluginListModel, &PluginListModel::pluginStatesChanged, ui->pluginList,
@@ -1778,6 +1832,19 @@ void PluginsWidget::refreshInfoTab(const TESData::FileInfo* plugin)
     html += u"<b>%1</b>: %2<br>"_s.arg(tr("Group"), plugin->group());
   }
 
+  // LOOT masterlist status
+  {
+    const auto* loot = m_PluginList->getLootReport(plugin->name());
+    if (loot) {
+      html += u"<b>%1</b>: <span style='color:#4caf50'>%2</span><br>"_s
+                  .arg(tr("LOOT"), tr("In masterlist — sorting managed automatically"));
+    } else {
+      html += u"<b>%1</b>: <span style='color:#9e9e9e'>%2 "
+              "<a href='add_loot_rule'>%3</a></span><br>"_s
+                  .arg(tr("LOOT"), tr("Not in masterlist."), tr("[Add rule…]"));
+    }
+  }
+
   html += u"<hr>"_s;
 
   // Conflicts: what this plugin overrides
@@ -1817,6 +1884,63 @@ void PluginsWidget::refreshInfoTab(const TESData::FileInfo* plugin)
       html += u"<b>%1</b>: %2 <i>(%3 shared records)</i><br>"_s
                   .arg(tr("Likely patches"), target->name(),
                        QString::number(maxIt.value()));
+    }
+  }
+
+  // Master chain (dependency graph, up to 2 levels)
+  {
+    const auto& masters = plugin->masters();
+    if (!masters.isEmpty()) {
+      html += u"<b>%1:</b><ul>"_s.arg(tr("Masters"));
+      for (const QString& m : masters) {
+        const auto* mp = m_PluginList->getPluginByName(m);
+        if (mp && !mp->masters().isEmpty()) {
+          // Show one level of grandmasters
+          QStringList gm;
+          for (const QString& g : mp->masters()) gm << g;
+          html += u"<li>%1 <span style='color:gray'>← %2</span></li>"_s
+                      .arg(m, gm.join(u", "_s));
+        } else {
+          html += u"<li>%1%2</li>"_s.arg(m,
+              mp ? QString() : u" <span style='color:#e57373'>(%1)</span>"_s.arg(tr("missing")));
+        }
+      }
+      html += u"</ul>"_s;
+    }
+  }
+
+  // Record type breakdown (top 5 by count)
+  {
+    const auto& hist = plugin->recordTypeHistogram();
+    if (!hist.isEmpty()) {
+      // Sort by count descending
+      QList<QPair<quint32, int>> sorted;
+      for (auto it = hist.constBegin(); it != hist.constEnd(); ++it)
+        sorted.append({it.key(), it.value()});
+      std::sort(sorted.begin(), sorted.end(),
+                [](const auto& a, const auto& b){ return a.second > b.second; });
+      int total = 0;
+      for (const auto& p : sorted) total += p.second;
+      html += u"<b>%1</b> (%2 total)<br>"_s.arg(tr("Record types"), QString::number(total));
+      html += u"<table cellspacing='2'>"_s;
+      const int shown = std::min(static_cast<int>(sorted.size()), 5);
+      for (int i = 0; i < shown; ++i) {
+        const quint32 key = sorted[i].first;
+        const int cnt = sorted[i].second;
+        // Decode 4-byte type back to string
+        const QString code = QString::fromLatin1(QByteArray(
+            reinterpret_cast<const char*>(&key), 4));
+        const QString name = TESData::formTypeName(code);
+        const int pct = total > 0 ? cnt * 100 / total : 0;
+        html += u"<tr><td>%1</td><td align='right'>%2</td>"
+                u"<td>&nbsp;<span style='color:gray'>%3%</span></td></tr>"_s
+                    .arg(name, QString::number(cnt), QString::number(pct));
+      }
+      if (sorted.size() > 5) {
+        html += u"<tr><td colspan='3'><i>…and %1 more types</i></td></tr>"_s
+                    .arg(sorted.size() - 5);
+      }
+      html += u"</table>"_s;
     }
   }
 
@@ -2052,7 +2176,149 @@ QWidget* PluginsWidget::buildSettingsTab(QWidget* parent)
     QDesktopServices::openUrl(QUrl::fromLocalFile(bsPath));
   });
   bsLay->addWidget(bsGenBtn);
+
+  auto* bsBatchBtn = new QPushButton(
+      tr("Generate .bs for all plugins in selected mod's origin…"), bsGroup);
+  bsBatchBtn->setToolTip(
+      tr("Generates a .bs hint file for every plugin that comes from the same mod as "
+         "the currently selected plugin. Each file is pre-filled with the current "
+         "classification so you can adjust and ship them with the mod."));
+  connect(bsBatchBtn, &QPushButton::clicked, page, [this]() {
+    const auto sel = ui->pluginList->selectionModel()->selectedIndexes();
+    if (sel.isEmpty()) {
+      QMessageBox::information(this, tr("Batch .bs Generator"),
+                               tr("Select a plugin in the list first."));
+      return;
+    }
+    const auto* plugin = m_PluginList->getPlugin(
+        sel.first().data(PluginListModel::IndexRole).toInt());
+    if (!plugin) return;
+    const int id          = m_PluginList->getIndex(plugin->name());
+    const QString origin  = m_PluginList->getOriginName(id);
+    const auto* mod       = m_Organizer->modList()->getMod(origin);
+    if (!mod) {
+      QMessageBox::information(this, tr("Batch .bs Generator"),
+                               tr("Cannot determine mod origin for this plugin."));
+      return;
+    }
+    const QString modPath = mod->absolutePath();
+    const QString prefix  = m_PluginList->blueprintPrefix();
+    int generated = 0;
+    const int count = m_PluginList->pluginCount();
+    for (int i = 0; i < count; ++i) {
+      const auto* p = m_PluginList->getPlugin(i);
+      if (!p) continue;
+      if (m_PluginList->getOriginName(i) != origin) continue;
+      const TESData::Classification cls = TESData::classifyPlugin(*p, prefix);
+      const QString bsPath = modPath + u"/"_s + p->name() + u".bs"_s;
+      if (QFile::exists(bsPath)) continue;  // don't overwrite existing hints
+      QFile f(bsPath);
+      if (f.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream ts(&f);
+        ts << "group=" << (cls.groupName.isEmpty() ? u"Unclassified"_s : cls.groupName) << "\n";
+        if (cls.zone != TESData::PluginZone::Unknown)
+          ts << "zone=" << TESData::zoneName(cls.zone) << "\n";
+        ts << "# confidence=95   (optional: 1-100, 0 = let BSPlugins auto-classify)\n";
+        ts << "# Edit group= and zone= to reflect where this plugin belongs.\n";
+        ++generated;
+      }
+    }
+    QMessageBox::information(this, tr("Batch .bs Generator"),
+                             tr("Generated %1 new .bs file(s) for mod \"%2\".\n\n"
+                                "Files already existing were skipped. "
+                                "Open the mod folder to edit them.")
+                                 .arg(generated).arg(origin));
+    if (generated > 0)
+      MOBase::shell::Explore(modPath);
+  });
+  bsLay->addWidget(bsBatchBtn);
   vbox->addWidget(bsGroup);
+
+  // ---- Named Snapshots ----
+  auto* snapGroup = new QGroupBox(tr("Load Order Snapshots"), page);
+  auto* snapLay   = new QVBoxLayout(snapGroup);
+  auto* snapInfo  = new QLabel(
+      tr("Save named snapshots of your load order — useful as stable restore points "
+         "before experimenting with new mods. Stored in <code>plugins/bsplugins/snapshots/</code>."),
+      snapGroup);
+  snapInfo->setWordWrap(true);
+  snapInfo->setStyleSheet(u"color: gray; font-size: small;"_s);
+  snapLay->addWidget(snapInfo);
+
+  auto* snapBtnRow = new QHBoxLayout;
+  auto* saveSnapBtn = new QPushButton(tr("Save snapshot…"), snapGroup);
+  saveSnapBtn->setToolTip(
+      tr("Saves the current plugins.txt, loadorder.txt, plugingroups.txt and "
+         "lockedorder.txt under a name you choose. Use to bookmark a known-good state."));
+  auto* restoreSnapBtn = new QPushButton(tr("Restore snapshot…"), snapGroup);
+  restoreSnapBtn->setToolTip(
+      tr("Lists all saved snapshots and restores the selected one, replacing the "
+         "current load order files. The plugin list reloads automatically."));
+  snapBtnRow->addWidget(saveSnapBtn);
+  snapBtnRow->addWidget(restoreSnapBtn);
+  snapBtnRow->addStretch();
+  snapLay->addLayout(snapBtnRow);
+
+  connect(saveSnapBtn, &QPushButton::clicked, page, [this]() {
+    bool ok = false;
+    const QString name = QInputDialog::getText(
+        topLevelWidget(), tr("Save Snapshot"),
+        tr("Snapshot name (no spaces or special characters):"),
+        QLineEdit::Normal, QString(), &ok);
+    if (!ok || name.trimmed().isEmpty()) return;
+    const QString safe = QString(name.trimmed()).replace(QRegularExpression(u"[^A-Za-z0-9_\\-]"_s), u"_"_s);
+    const QString snapDir = MOPlugin::BSPluginsINI::pluginDir() +
+                            u"/snapshots/"_s + safe;
+    if (!QDir().mkpath(snapDir)) {
+      QMessageBox::critical(topLevelWidget(), tr("Save Snapshot"),
+                            tr("Could not create snapshot directory:\n%1").arg(snapDir));
+      return;
+    }
+    const auto profilePath = QDir(m_Organizer->profilePath());
+    const QStringList files{u"plugins.txt"_s, u"loadorder.txt"_s,
+                            u"plugingroups.txt"_s, u"lockedorder.txt"_s};
+    for (const QString& f : files) {
+      const QString src = QDir::cleanPath(profilePath.absoluteFilePath(f));
+      const QString dst = snapDir + u"/"_s + f;
+      if (QFileInfo::exists(src))
+        MOBase::shellCopy(src, dst, true, topLevelWidget());
+    }
+    bsLog(tr("Snapshot \"%1\" saved.").arg(safe));
+  });
+
+  connect(restoreSnapBtn, &QPushButton::clicked, page, [this]() {
+    const QString snapRoot = MOPlugin::BSPluginsINI::pluginDir() + u"/snapshots"_s;
+    const QStringList snapshots = QDir(snapRoot).entryList(QDir::Dirs | QDir::NoDotAndDotDot,
+                                                            QDir::Name);
+    if (snapshots.isEmpty()) {
+      QMessageBox::information(topLevelWidget(), tr("Restore Snapshot"),
+                               tr("No snapshots found. Use 'Save snapshot…' first."));
+      return;
+    }
+    bool ok = false;
+    const QString chosen = QInputDialog::getItem(
+        topLevelWidget(), tr("Restore Snapshot"),
+        tr("Choose a snapshot to restore:"), snapshots, 0, false, &ok);
+    if (!ok || chosen.isEmpty()) return;
+    const auto reply = QMessageBox::question(
+        topLevelWidget(), tr("Restore Snapshot"),
+        tr("Restore snapshot \"%1\"? Your current load order will be replaced.").arg(chosen),
+        QMessageBox::Yes | QMessageBox::No);
+    if (reply != QMessageBox::Yes) return;
+    const QString snapDir = snapRoot + u"/"_s + chosen;
+    const auto profilePath = QDir(m_Organizer->profilePath());
+    const QStringList files{u"plugins.txt"_s, u"loadorder.txt"_s,
+                            u"plugingroups.txt"_s, u"lockedorder.txt"_s};
+    for (const QString& f : files) {
+      const QString src = snapDir + u"/"_s + f;
+      const QString dst = QDir::cleanPath(profilePath.absoluteFilePath(f));
+      if (QFileInfo::exists(src))
+        MOBase::shellCopy(src, dst, true, topLevelWidget());
+    }
+    m_PluginListModel->invalidate();
+    bsLog(tr("Snapshot \"%1\" restored.").arg(chosen));
+  });
+  vbox->addWidget(snapGroup);
 
   // ---- Export ----
   auto* exportGroup = new QGroupBox(tr("Export"), page);
