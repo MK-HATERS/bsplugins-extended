@@ -39,6 +39,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListView>
+#include <QListWidget>
 #include <QPointer>
 #include <QPushButton>
 #include <QSortFilterProxyModel>

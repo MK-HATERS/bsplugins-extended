@@ -555,13 +555,13 @@ inline constexpr QStringView getDefaultObjectName(TESFile::Type type)
   return find(DefaultObjectNames, type);
 }
 
-// Convenience for the custom group dialog — lookup by 4-char code string.
+// Convenience for the custom group dialog — returns the 4-char code as-is.
+// (ARMO, LIGH, NPC_, QUST etc. are already self-descriptive for modders.)
+// A lookup via TESFile::Type is intentionally avoided: this header is included
+// from BSPluginList TUs that do not have the full TESFile include chain.
 inline QString formTypeName(const QString& code)
 {
-  if (code.size() != 4) return code;
-  const TESFile::Type t(code.toLatin1().constData());
-  const QStringView sv = getFormName(t);
-  return sv.isEmpty() ? code : sv.toString();
+  return code;
 }
 
 }  // namespace TESData

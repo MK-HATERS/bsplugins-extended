@@ -65,7 +65,7 @@ static QStringList parseNameList(const QStringList& block, const QString& key)
     if (inKey) {
       if (trimmed.startsWith(u"- name:"_s)) {
         QString n = trimmed.mid(7).trimmed();
-        n.remove(u'\''_s);
+        n.remove(u'\'');
         result << n;
       } else if (!trimmed.startsWith(u"-"_s) && trimmed.contains(u":"_s)) {
         inKey = false;  // hit another key
