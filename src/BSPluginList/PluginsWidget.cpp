@@ -2078,7 +2078,7 @@ QWidget* PluginsWidget::buildSettingsTab(QWidget* parent)
   manageBtn->setToolTip(
       tr("Manage all plugin groups, create custom groups, and assign plugins "
          "by dragging or selecting."));
-  connect(manageBtn, &QPushButton::clicked, page, [this, refreshCgList]() {
+  connect(manageBtn, &QPushButton::clicked, page, [this, refreshCgList, page]() {
     auto* dlg = new GroupManagerDialog(m_PluginList, m_PluginListModel, this);
     dlg->setAttribute(Qt::WA_DeleteOnClose);
     connect(dlg, &QDialog::finished, page, [refreshCgList]{ refreshCgList(); });
