@@ -304,7 +304,8 @@ PluginsWidget::PluginsWidget(MOBase::IOrganizer* organizer,
     }
   }
 
-  ui->sortButton->setVisible(Settings::instance()->enableSortButton());
+  // MO2's Sort (LOOT) button is always visible — we never hide it.
+  // Only our own Patch Sort button respects the enableSortButton setting.
   updateGroupActionVisibility();
 
   // Show welcome / changelog dialog and kick off update check after UI is ready
@@ -312,7 +313,7 @@ PluginsWidget::PluginsWidget(MOBase::IOrganizer* organizer,
     checkVersionOnStartup();
 
     // Async update check — fires updateAvailable() if a newer version exists
-    const QString currentVer = u"0.2.0"_s;
+    const QString currentVer = u"2.9.b"_s;
     auto* checker = new UpdateChecker(currentVer, this);
     connect(checker, &UpdateChecker::updateAvailable, this,
             [this, currentVer](const QString& latest, const QString& url) {
@@ -327,7 +328,7 @@ PluginsWidget::PluginsWidget(MOBase::IOrganizer* organizer,
     checker->check();
 
     // Log a startup notice so the panel shows something on first open
-    bsLog(tr("BSPlugins Extended v0.2.0 ready. Run LOOT sort to classify plugins."));
+    bsLog(tr("BSPlugins Extended v2.9 Beta ready. Run LOOT sort to classify plugins."));
   });
 
     auto* const sortShortcut = new QShortcut(QKeySequence(tr("Ctrl+Shift+S")), this);
@@ -1451,10 +1452,9 @@ void PluginsWidget::onSettingChanged(const QString& key,
                                      const QVariant& newValue)
 {
   if (key == u"enable_sort_button"_s) {
-    const bool visible = newValue.value<bool>();
-    ui->sortButton->setVisible(visible);
+    // Only control our Patch Sort button — never touch MO2's Sort button.
     if (auto* b = findChild<QPushButton*>(u"patchSortBtn"_s)) {
-      b->setVisible(visible);
+      b->setVisible(newValue.value<bool>());
     }
   } else if (key == u"enable_plugin_grouping"_s) {
     applyGroupingSetting();
@@ -2105,7 +2105,7 @@ QWidget* PluginsWidget::buildSettingsTab(QWidget* parent)
 
   auto* checkNowBtn = new QPushButton(tr("Check for update now"), updGroup);
   connect(checkNowBtn, &QPushButton::clicked, page, [this]() {
-    auto* checker = new UpdateChecker(u"0.2.0"_s, this);
+    auto* checker = new UpdateChecker(u"2.9.b"_s, this);
     connect(checker, &UpdateChecker::updateAvailable, this,
             [this](const QString& latest, const QString& url) {
               bsWarn(tr("Update available: v%1").arg(latest));
@@ -2119,7 +2119,7 @@ QWidget* PluginsWidget::buildSettingsTab(QWidget* parent)
 
   // ---- About ----
   auto* aboutLabel = new QLabel(
-      tr("<small>BSPlugins Extended v0.2.0 by MK-HATERS<br>"
+      tr("<small>BSPlugins Extended v2.9 Beta (BETA) by MK-HATERS<br>"
          "Based on work by Parapets and Alaxouche<br>"
          "<a href='https://github.com/MK-HATERS/bsplugins-extended'>GitHub</a>"
          "</small>"),
@@ -2395,7 +2395,7 @@ void PluginsWidget::checkVersionOnStartup()
   auto& ini = MOPlugin::pluginINI();
 
   const QString storedVersion = ini.lastPluginVersion();
-  const auto    verInfo       = MOBase::VersionInfo(0, 2, 0, 0);
+  const auto    verInfo       = MOBase::VersionInfo(2, 9, 0, 0);
   const QString ver           = verInfo.displayString(3);
 
   const bool isFirstInstall = storedVersion.isEmpty();

@@ -25,6 +25,7 @@ public:
     InfoRole,
     ConflictsIconRole,
     FlagsIconRole,
+    BSFlagsIconRole,   // Starfield-specific flag icons (COL_BSINFO)
     OriginRole,
     OverridingRole,
     OverriddenRole,
@@ -38,6 +39,7 @@ public:
     COL_NAME,
     COL_CONFLICTS,
     COL_FLAGS,
+    COL_BSINFO,    // Starfield-specific flags: ESH, Blueprint, Patch suggestion
     COL_PRIORITY,
     COL_MODINDEX,
     COL_NOTES,
@@ -139,6 +141,7 @@ private:
   [[nodiscard]] QVariant tooltipData(const QModelIndex& index) const;
   [[nodiscard]] QVariant conflictData(const QModelIndex& index) const;
   [[nodiscard]] QVariant iconData(const QModelIndex& index) const;
+  [[nodiscard]] QVariant bsFlagsIconData(const QModelIndex& index) const;
 
   TESData::PluginList* m_Plugins;
   mutable QHash<int, QVariant> m_ConflictCache;

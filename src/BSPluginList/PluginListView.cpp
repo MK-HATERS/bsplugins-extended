@@ -33,11 +33,13 @@ void PluginListView::setup()
 {
   setItemDelegateForColumn(PluginListModel::COL_CONFLICTS,
                            new ConflictIconDelegate(this));
-  setItemDelegateForColumn(PluginListModel::COL_FLAGS, new FlagIconDelegate(this));
+  setItemDelegateForColumn(PluginListModel::COL_FLAGS,   new FlagIconDelegate(this));
+  setItemDelegateForColumn(PluginListModel::COL_BSINFO,  new BSFlagIconDelegate(this));
 
-  header()->resizeSection(PluginListModel::COL_NAME, 332);
+  header()->resizeSection(PluginListModel::COL_NAME, 310);
   header()->resizeSection(PluginListModel::COL_CONFLICTS, 71);
-  header()->resizeSection(PluginListModel::COL_FLAGS, 60);
+  header()->resizeSection(PluginListModel::COL_FLAGS, 55);
+  header()->resizeSection(PluginListModel::COL_BSINFO, 44);  // compact: 3 icons max
   header()->resizeSection(PluginListModel::COL_PRIORITY, 62);
   header()->resizeSection(PluginListModel::COL_MODINDEX, 79);
   header()->resizeSection(PluginListModel::COL_RECORDS, 70);

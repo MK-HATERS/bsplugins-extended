@@ -17,62 +17,73 @@ QList<QString> FlagIconDelegate::getIcons(const QModelIndex& index) const
 
   QList<QString> icons;
 
-  // Critical problems (missing masters, invalid ObjectIDs, broken blueprints)
+  // MO2's standard icons — these match what the rest of MO2 uses.
   if (flags & FLAG_PROBLEMATIC) {
-    icons.append(":/bsplugins/beacon-warning");
+    icons.append(":/MO/gui/warning");
   }
-
-  // LOOT messages / informational notices
   if (flags & FLAG_INFORMATION) {
-    icons.append(":/bsplugins/comms");
+    icons.append(":/MO/gui/information");
   }
-
-  // Has an associated INI file
   if (flags & FLAG_INI) {
-    icons.append(":/bsplugins/datapad");
+    icons.append(":/MO/gui/attachment");
   }
-
-  // Has associated BSA/BA2 archives
   if (flags & FLAG_BSA) {
-    icons.append(":/bsplugins/cargo");
+    icons.append(":/MO/gui/archive_conflict_neutral");
   }
-
-  // ESM — master plugin (ringed planet)
   if (flags & FLAG_MASTER) {
-    icons.append(":/bsplugins/planet");
+    icons.append(":/bsplugins/star");
   }
-
-  // ESL — light plugin (comet)
   if (flags & FLAG_LIGHT) {
-    icons.append(":/bsplugins/comet");
+    icons.append(":/bsplugins/feather");
   }
-
-  // Overlay — no record space consumed (hologram)
   if (flags & FLAG_OVERLAY) {
-    icons.append(":/bsplugins/hologram");
+    icons.append(":/MO/gui/instance_switch");
+  }
+  if (flags & FLAG_CLEAN) {
+    icons.append(":/MO/gui/edit_clear");
+  }
+  if (flags & FLAG_LOCKED) {
+    icons.append(":/MO/gui/locked");
   }
 
-  // ESH — medium plugin (hex shield)
+  // Starfield-specific flags live in the separate BS Info column
+  // (BSFlagIconDelegate / COL_BSINFO) — not shown here.
+
+  return icons;
+}
+
+int FlagIconDelegate::getNumIcons(const QModelIndex& index) const
+{
+  using enum TESData::FileInfo::EFlag;
+  // Only count the flags rendered in this column (not our BS Info flags).
+  constexpr uint kMOFlags = FLAG_PROBLEMATIC | FLAG_INFORMATION | FLAG_INI |
+                            FLAG_BSA | FLAG_MASTER | FLAG_LIGHT | FLAG_OVERLAY |
+                            FLAG_CLEAN | FLAG_LOCKED;
+  return std::popcount(static_cast<uint>(m_View->fileFlags(index)) & kMOFlags);
+}
+
+// ---------------------------------------------------------------------------
+// BSFlagIconDelegate — COL_BSINFO: Starfield-specific custom icons only.
+// ---------------------------------------------------------------------------
+
+BSFlagIconDelegate::BSFlagIconDelegate(PluginListView* view)
+    : GUI::IconDelegate(view), m_View{view}
+{}
+
+QList<QString> BSFlagIconDelegate::getIcons(const QModelIndex& index) const
+{
+  const auto flags = m_View->fileFlags(index);
+  QList<QString> icons;
+
+  // ESH medium plugin
   if (flags & FLAG_MEDIUM) {
     icons.append(":/bsplugins/hex-shield");
   }
-
-  // Blueprint — auto-loaded alongside paired main plugin (schematic)
+  // Blueprint auto-loaded alongside paired main plugin
   if (flags & FLAG_BLUEPRINT) {
     icons.append(":/bsplugins/schematic");
   }
-
-  // LOOT verified clean
-  if (flags & FLAG_CLEAN) {
-    icons.append(":/bsplugins/scanner-ok");
-  }
-
-  // Locked load order position
-  if (flags & FLAG_LOCKED) {
-    icons.append(":/bsplugins/mag-lock");
-  }
-
-  // Inferred patch relationship — may need to load after another plugin
+  // Inferred patch — may need ordering fix
   if (flags & FLAG_PATCH_SUGGESTION) {
     icons.append(":/bsplugins/query-beacon");
   }
@@ -80,9 +91,11 @@ QList<QString> FlagIconDelegate::getIcons(const QModelIndex& index) const
   return icons;
 }
 
-int FlagIconDelegate::getNumIcons(const QModelIndex& index) const
+int BSFlagIconDelegate::getNumIcons(const QModelIndex& index) const
 {
-  return std::popcount(static_cast<uint>(m_View->fileFlags(index)));
+  using enum TESData::FileInfo::EFlag;
+  constexpr uint kBSFlags = FLAG_MEDIUM | FLAG_BLUEPRINT | FLAG_PATCH_SUGGESTION;
+  return std::popcount(static_cast<uint>(m_View->fileFlags(index)) & kBSFlags);
 }
 
 }  // namespace BSPluginList
