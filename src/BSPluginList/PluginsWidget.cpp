@@ -41,6 +41,8 @@
 #include <QListWidget>
 #include <QPointer>
 #include <QPushButton>
+#include <QGridLayout>
+#include <QScrollArea>
 #include <QSortFilterProxyModel>
 #include <QSpinBox>
 #include <QSplitter>
@@ -240,8 +242,8 @@ PluginsWidget::PluginsWidget(MOBase::IOrganizer* organizer,
 
       innerTabs->addTab(logPage, tr("Log"));
       innerTabs->setTabToolTip(1,
-          tr("BSPlugins-only messages: warnings, classification decisions, "
-             "update check results. Nothing is written to MO2's main log."));
+          tr("BSPlugins-only messages: startup health score, warnings, "
+             "classification decisions. Nothing is written to MO2's main log."));
 
       // ── Tab 3: Settings ───────────────────────────────────────────────
       // Inline settings backed by BSPluginsINI — no separate dialog needed.
@@ -251,14 +253,15 @@ PluginsWidget::PluginsWidget(MOBase::IOrganizer* organizer,
           tr("Configure group names, patch detection threshold, update URL. "
              "Changes save immediately to settings.ini and survive plugin updates."));
 
-      // Plugin list above (stretches), supplementary panel below (fixed start)
+      // Plugin list above (stretches), info/log/settings panel below.
+      // The panel starts at 260px; double-click the handle to collapse it.
       auto* splitter = new QSplitter(Qt::Vertical, this);
       splitter->addWidget(pluginsContainer);
       splitter->addWidget(innerTabs);
-      // Plugin list gets most of the space; supplementary panel starts small
-      splitter->setSizes({10000, 180});
-      splitter->setCollapsible(0, false);  // list is never fully collapsed
-      splitter->setHandleWidth(5);
+      splitter->setSizes({10000, 260});
+      splitter->setCollapsible(0, false);
+      splitter->setCollapsible(1, true);   // panel can collapse to zero
+      splitter->setHandleWidth(6);
 
       rootLayout->addWidget(splitter);
     }
@@ -1776,65 +1779,63 @@ void PluginsWidget::refreshInfoTab(const TESData::FileInfo* plugin)
 
   const int id = m_PluginList->getIndex(plugin->name());
 
-  QString html = u"<h3>%1</h3>"_s.arg(plugin->name());
-
-  // Origin mod
+  // ── Header: name + quick-info table ─────────────────────────────────────
   const QString origin = m_PluginList->getOriginName(id);
-  if (!origin.isEmpty()) {
-    html += u"<b>%1</b>: %2<br>"_s.arg(tr("Mod"), origin);
-  }
 
-  // Type flags
   QStringList types;
   if (plugin->isMasterFlagged() || plugin->hasMasterExtension()) types << u"ESM"_s;
   if (plugin->isLightFlagged()  || plugin->hasLightExtension())  types << u"ESL"_s;
-  if (plugin->isMediumFlagged())   types << u"ESH"_s;
-  if (plugin->isOverlayFlagged())  types << u"Overlay"_s;
+  if (plugin->isMediumFlagged())    types << u"ESH"_s;
+  if (plugin->isOverlayFlagged())   types << u"Overlay"_s;
   if (plugin->isBlueprintFlagged()) types << u"Blueprint"_s;
-  if (!types.isEmpty()) {
-    html += u"<b>%1</b>: %2<br>"_s.arg(tr("Type"), types.join(u", "_s));
-  }
 
-  // Classification from record analysis
   const TESData::Classification cls =
       TESData::classifyPlugin(*plugin, m_PluginList->blueprintPrefix());
-  if (cls.zone != TESData::PluginZone::Unknown) {
-    // Confidence colour: green ≥70, amber 40-69, gray <40
-    const char* confColor = cls.confidence >= 70 ? "#4caf50"
-                          : cls.confidence >= 40 ? "#ff9800"
-                                                 : "#9e9e9e";
-    const int filled = std::clamp((cls.confidence + 10) / 20, 1, 5);
-    const QString dots = u"<span style='color:%3'>%1%2</span>"_s
-                             .arg(QString(filled, u'●'), QString(5 - filled, u'○'))
-                             .arg(QString::fromLatin1(confColor));
-    html += u"<b>%1</b>: %2 %3 <i style='color:gray'>(%4)</i><br>"_s
-                .arg(tr("Classified as"), cls.groupName, dots, cls.reason);
-  }
 
-  // Current group
-  if (!plugin->group().isEmpty()) {
-    html += u"<b>%1</b>: %2<br>"_s.arg(tr("Group"), plugin->group());
-  }
+  const char* confColor = cls.confidence >= 70 ? "#4caf50"
+                        : cls.confidence >= 40 ? "#ff9800"
+                                               : "#9e9e9e";
+  const int filled = std::clamp((cls.confidence + 10) / 20, 1, 5);
+  const QString dots = u"<span style='color:%3'>%1%2</span>"_s
+                           .arg(QString(filled, u'●'), QString(5 - filled, u'○'))
+                           .arg(QString::fromLatin1(confColor));
 
-  // LOOT masterlist status
-  {
-    const auto* loot = m_PluginList->getLootReport(plugin->name());
-    if (loot) {
-      html += u"<b>%1</b>: <span style='color:#4caf50'>%2</span><br>"_s
-                  .arg(tr("LOOT"), tr("In masterlist — sorting managed automatically"));
-    } else {
-      html += u"<b>%1</b>: <span style='color:#9e9e9e'>%2 "
-              "<a href='add_loot_rule'>%3</a></span><br>"_s
-                  .arg(tr("LOOT"), tr("Not in masterlist."), tr("[Add rule…]"));
-    }
-  }
+  const auto* loot = m_PluginList->getLootReport(plugin->name());
 
-  html += u"<hr>"_s;
+  QString html =
+      u"<h3 style='margin:0 0 4px 0'>%1</h3>"_s.arg(plugin->name()) +
+      u"<table cellspacing='2' style='font-size:small'>"_s;
 
-  // Conflicts: what this plugin overrides
+  if (!origin.isEmpty())
+    html += u"<tr><td style='color:gray'>%1</td><td>%2</td></tr>"_s
+                .arg(tr("Mod"), origin);
+  if (!types.isEmpty())
+    html += u"<tr><td style='color:gray'>%1</td><td>%2</td></tr>"_s
+                .arg(tr("Type"), types.join(u", "_s));
+  if (cls.zone != TESData::PluginZone::Unknown)
+    html += u"<tr><td style='color:gray'>%1</td><td>%2 %3 "
+            u"<span style='color:gray;font-style:italic'>%4</span></td></tr>"_s
+                .arg(tr("Group"), cls.groupName, dots, cls.reason);
+  if (!plugin->group().isEmpty() && plugin->group() != u"default"_s)
+    html += u"<tr><td style='color:gray'>%1</td><td><b>%2</b></td></tr>"_s
+                .arg(tr("Assigned"), plugin->group());
+  if (loot)
+    html += u"<tr><td style='color:gray'>LOOT</td>"
+            u"<td><span style='color:#4caf50'>✔ %1</span></td></tr>"_s
+                .arg(tr("In masterlist"));
+  else
+    html += u"<tr><td style='color:gray'>LOOT</td>"
+            u"<td><span style='color:#9e9e9e'>%1 <a href='add_loot_rule'>%2</a></span>"
+            u"</td></tr>"_s
+                .arg(tr("Not in masterlist"), tr("[Add rule…]"));
+
+  html += u"</table><hr style='margin:4px 0'>"_s;
+
+  // ── Conflicts ────────────────────────────────────────────────────────────
   const auto& winning = plugin->getPluginOverriding();
   if (!winning.isEmpty()) {
-    html += u"<b>%1 (%2):</b><ul>"_s.arg(tr("Overrides"), QString::number(winning.size()));
+    html += u"<b>%1</b> <span style='color:gray'>(%2)</span><ul style='margin:2px 0'>"_s
+                .arg(tr("Overrides"), QString::number(winning.size()));
     int shown = 0;
     for (const int idx : winning) {
       if (shown++ >= 10) { html += u"<li><i>…and %1 more</i></li>"_s.arg(winning.size() - 10); break; }
@@ -1845,10 +1846,10 @@ void PluginsWidget::refreshInfoTab(const TESData::FileInfo* plugin)
     html += u"</ul>"_s;
   }
 
-  // Conflicts: what overrides this plugin
   const auto& losing = plugin->getPluginOverridden();
   if (!losing.isEmpty()) {
-    html += u"<b>%1 (%2):</b><ul>"_s.arg(tr("Overridden by"), QString::number(losing.size()));
+    html += u"<b>%1</b> <span style='color:gray'>(%2)</span><ul style='margin:2px 0'>"_s
+                .arg(tr("Overridden by"), QString::number(losing.size()));
     int shown = 0;
     for (const int idx : losing) {
       if (shown++ >= 10) { html += u"<li><i>…and %1 more</i></li>"_s.arg(losing.size() - 10); break; }
@@ -1960,55 +1961,71 @@ void PluginsWidget::refreshInfoTab(const TESData::FileInfo* plugin)
 }
 
 // ---------------------------------------------------------------------------
-// Settings tab: inline form backed by BSPluginsINI — no dialog needed.
+// Settings tab: scrollable, compact layout backed by BSPluginsINI.
+// All sections use tooltips for descriptions instead of inline label text,
+// keeping each section height to a minimum.
 // ---------------------------------------------------------------------------
 QWidget* PluginsWidget::buildSettingsTab(QWidget* parent)
 {
   auto& ini = MOPlugin::pluginINI();
 
-  auto* page = new QWidget(parent);
+  // Root: a scroll area wrapping all content so nothing gets clipped
+  auto* scroll = new QScrollArea(parent);
+  scroll->setWidgetResizable(true);
+  scroll->setFrameShape(QFrame::NoFrame);
+  scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+
+  auto* page = new QWidget(scroll);
+  scroll->setWidget(page);
+
   auto* vbox = new QVBoxLayout(page);
   vbox->setContentsMargins(6, 6, 6, 6);
-  vbox->setSpacing(8);
+  vbox->setSpacing(6);
 
-  // ---- Group Names ----
-  auto* namesGroup = new QGroupBox(tr("Group Names"), page);
-  auto* namesForm  = new QFormLayout(namesGroup);
-  namesForm->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+  // ── 1. Groups ────────────────────────────────────────────────────────────
+  auto* grpBox  = new QGroupBox(tr("Groups"), page);
+  auto* grpLay  = new QVBoxLayout(grpBox);
+  grpLay->setSpacing(4);
 
-  auto addRow = [&](const QString& label, const QString& val,
-                    std::function<void(const QString&)> setter) {
-    auto* edit = new QLineEdit(val, namesGroup);
-    connect(edit, &QLineEdit::textChanged, page, [setter](const QString& t) {
-      if (!t.trimmed().isEmpty()) setter(t.trimmed());
-    });
-    namesForm->addRow(label, edit);
+  // Group name edits in a compact 2-column grid
+  auto* namesGrid = new QGridLayout;
+  namesGrid->setSpacing(4);
+
+  struct NameDef { QString label; QString val; std::function<void(const QString&)> setter; };
+  QList<NameDef> nameDefs{
+    { tr("Patches"),        ini.groupNamePatches(),    [&ini](const QString& v){ ini.setGroupNamePatches(v); }},
+    { tr("Visuals"),        ini.groupNameVisuals(),    [&ini](const QString& v){ ini.setGroupNameVisuals(v); }},
+    { tr("World Changes"),  ini.groupNameWorld(),      [&ini](const QString& v){ ini.setGroupNameWorld(v); }},
+    { tr("Gameplay"),       ini.groupNameGameplay(),   [&ini](const QString& v){ ini.setGroupNameGameplay(v); }},
+    { tr("NPCs & Content"), ini.groupNameNPCs(),       [&ini](const QString& v){ ini.setGroupNameNPCs(v); }},
+    { tr("Frameworks"),     ini.groupNameFrameworks(), [&ini](const QString& v){ ini.setGroupNameFrameworks(v); }},
+    { tr("Archives"),       ini.groupNameArchive(),    [&ini](const QString& v){ ini.setGroupNameArchive(v); }},
   };
 
-  addRow(tr("Patches:"),         ini.groupNamePatches(),    [&ini](const QString& v){ ini.setGroupNamePatches(v); });
-  addRow(tr("Visuals:"),         ini.groupNameVisuals(),    [&ini](const QString& v){ ini.setGroupNameVisuals(v); });
-  addRow(tr("World Changes:"),   ini.groupNameWorld(),      [&ini](const QString& v){ ini.setGroupNameWorld(v); });
-  addRow(tr("Gameplay:"),        ini.groupNameGameplay(),   [&ini](const QString& v){ ini.setGroupNameGameplay(v); });
-  addRow(tr("NPCs & Content:"),  ini.groupNameNPCs(),       [&ini](const QString& v){ ini.setGroupNameNPCs(v); });
-  addRow(tr("Frameworks:"),      ini.groupNameFrameworks(), [&ini](const QString& v){ ini.setGroupNameFrameworks(v); });
-  addRow(tr("Archive Loaders:"), ini.groupNameArchive(),   [&ini](const QString& v){ ini.setGroupNameArchive(v); });
-
-  // Collect edit pointers so the reset button can repopulate them.
-  // addRow() above appended each QLineEdit as the field item in the form.
   QList<QLineEdit*> groupEdits;
-  for (int r = 0; r < namesForm->rowCount(); ++r) {
-    if (auto* item = namesForm->itemAt(r, QFormLayout::FieldRole)) {
-      if (auto* e = qobject_cast<QLineEdit*>(item->widget())) {
-        groupEdits.append(e);
-      }
-    }
+  for (int i = 0; i < nameDefs.size(); ++i) {
+    const int row = i / 2;
+    const int col = (i % 2) * 2;
+    auto* lbl  = new QLabel(nameDefs[i].label + u":"_s, grpBox);
+    auto* edit = new QLineEdit(nameDefs[i].val, grpBox);
+    lbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    connect(edit, &QLineEdit::textChanged, page, [setter = nameDefs[i].setter](const QString& t) {
+      if (!t.trimmed().isEmpty()) setter(t.trimmed());
+    });
+    namesGrid->addWidget(lbl,  row, col);
+    namesGrid->addWidget(edit, row, col + 1);
+    namesGrid->setColumnStretch(col + 1, 1);
+    groupEdits.append(edit);
   }
 
-  auto* resetBtn = new QPushButton(tr("Reset to defaults"), namesGroup);
+  auto* resetBtn = new QPushButton(tr("Reset names"), grpBox);
+  resetBtn->setToolTip(tr("Reset all group names to their built-in defaults."));
+  resetBtn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+  namesGrid->addWidget(resetBtn, (nameDefs.size() - 1) / 2 + 1, 2, 1, 2,
+                       Qt::AlignRight);
   connect(resetBtn, &QPushButton::clicked, page,
           [&ini, groupEdits]() {
             ini.resetGroupNamesToDefaults();
-            // Repopulate fields in the same order addRow() added them
             const QStringList defaults{
                 ini.groupNamePatches(), ini.groupNameVisuals(),
                 ini.groupNameWorld(),   ini.groupNameGameplay(),
@@ -2019,101 +2036,59 @@ QWidget* PluginsWidget::buildSettingsTab(QWidget* parent)
               groupEdits.at(i)->setText(defaults.at(i));
             }
           });
-  namesForm->addRow(QString(), resetBtn);
-  vbox->addWidget(namesGroup);
+  grpLay->addLayout(namesGrid);
 
-  // ---- Custom Groups ----
-  auto* cgGroup = new QGroupBox(tr("Custom Groups"), page);
-  auto* cgLay   = new QVBoxLayout(cgGroup);
-  auto* cgInfo  = new QLabel(
-      tr("Define your own groups with optional record-type detection rules.\n"
-         "Custom groups are checked before built-in classification."), cgGroup);
-  cgInfo->setWordWrap(true);
-  cgInfo->setStyleSheet(u"color: gray; font-size: small;"_s);
-  cgLay->addWidget(cgInfo);
-
-  // Inline list showing existing custom groups (read-only summary)
-  auto* cgListWidget = new QListWidget(cgGroup);
-  cgListWidget->setMaximumHeight(90);
-  cgListWidget->setSelectionMode(QAbstractItemView::NoSelection);
-  cgListWidget->setStyleSheet(u"font-size: small;"_s);
-  const QPointer<QListWidget> cgListPtr(cgListWidget);
-  const auto refreshCgList = [cgListPtr]() {
-    if (!cgListPtr) return;  // widget was destroyed
-    cgListPtr->clear();
-    for (const auto& cg : MOPlugin::pluginINI().customGroups()) {
-      const QString label = cg.recordTypes.isEmpty()
-          ? u"★ %1  →  %2"_s.arg(cg.name, cg.zone)
-          : u"★ %1  →  %2  [%3 ≥%4%]"_s.arg(
-                cg.name, cg.zone, cg.recordTypes.join(u','),
-                QString::number(cg.threshold));
-      cgListPtr->addItem(label);
-    }
-    if (cgListPtr->count() == 0) {
-      auto* empty = new QListWidgetItem(
-          QObject::tr("No custom groups defined yet."), cgListPtr.data());
-      empty->setForeground(Qt::gray);
-    }
+  // Custom groups summary + manage button on one row
+  auto* cgRow  = new QHBoxLayout;
+  const QPointer<QLabel> cgCountLbl(new QLabel(grpBox));
+  auto refreshCgCount = [cgCountLbl]() {
+    if (!cgCountLbl) return;
+    const int n = MOPlugin::pluginINI().customGroups().size();
+    cgCountLbl->setText(n == 0 ? tr("No custom groups")
+                                : tr("%1 custom group(s)").arg(n));
   };
-  refreshCgList();
-  cgLay->addWidget(cgListWidget);
-
-  auto* manageBtn = new QPushButton(tr("Open Group Manager…"), cgGroup);
+  refreshCgCount();
+  cgCountLbl->setStyleSheet(u"color: gray; font-size: small;"_s);
+  auto* manageBtn = new QPushButton(tr("Manage Groups…"), grpBox);
   manageBtn->setToolTip(
-      tr("Manage all plugin groups, create custom groups, and assign plugins "
-         "by dragging or selecting."));
+      tr("Open the Group Manager to create, edit, or delete custom groups "
+         "and assign plugins by dragging or selecting."));
+
+  const auto refreshCgList = [refreshCgCount]() { refreshCgCount(); };
+
   connect(manageBtn, &QPushButton::clicked, page, [this, refreshCgList, page]() {
     auto* dlg = new GroupManagerDialog(m_PluginList, m_PluginListModel, this);
     dlg->setAttribute(Qt::WA_DeleteOnClose);
     connect(dlg, &QDialog::finished, page, [refreshCgList]{ refreshCgList(); });
     dlg->show();
   });
-  cgLay->addWidget(manageBtn);
-  vbox->addWidget(cgGroup);
+  cgRow->addWidget(cgCountLbl.data(), 1);
+  cgRow->addWidget(manageBtn);
+  grpLay->addLayout(cgRow);
 
-  // ---- Updates ----
-  auto* updGroup = new QGroupBox(tr("Updates"), page);
-  auto* updLay   = new QVBoxLayout(updGroup);
-  auto* updInfo  = new QLabel(
-      tr("Check the Nexus page for a newer version of BSPlugins Extended. "
-         "Automatic network checks are disabled to avoid interfering with "
-         "MO2's Nexus download system."),
-      updGroup);
-  updInfo->setWordWrap(true);
-  updInfo->setStyleSheet(u"color: gray; font-size: small;"_s);
-  updLay->addWidget(updInfo);
-  auto* nexusBtn = new QPushButton(tr("Open Nexus page (check for updates)"), updGroup);
-  nexusBtn->setToolTip(tr("Opens the Nexus Mods page for BSPlugins Extended in your browser."));
-  connect(nexusBtn, &QPushButton::clicked, page, []() {
-    QDesktopServices::openUrl(
-        QUrl(QStringLiteral("https://www.nexusmods.com/starfield/mods/17318")));
-  });
-  updLay->addWidget(nexusBtn);
-  vbox->addWidget(updGroup);
+  // Patch detection threshold
+  auto* threshRow = new QHBoxLayout;
+  auto* threshLbl = new QLabel(tr("Patch threshold:"), grpBox);
+  threshLbl->setToolTip(
+      tr("Minimum number of shared records before a plugin is flagged as a "
+         "likely patch and shown in the Group Review dialog."));
+  auto* threshSpin = new QSpinBox(grpBox);
+  threshSpin->setRange(1, 200);
+  threshSpin->setValue(ini.patchThreshold());
+  threshSpin->setToolTip(threshLbl->toolTip());
+  connect(threshSpin, QOverload<int>::of(&QSpinBox::valueChanged), page,
+          [&ini](int v) { ini.setPatchThreshold(v); });
+  threshRow->addWidget(threshLbl);
+  threshRow->addWidget(threshSpin);
+  threshRow->addStretch();
+  grpLay->addLayout(threshRow);
 
-  // ---- About ----
-  auto* aboutLabel = new QLabel(
-      tr("<small>BSPlugins Extended v2.9 Beta by MK-HATERS<br>"
-         "Based on work by Parapets and Alaxouche<br>"
-         "<a href='https://www.nexusmods.com/starfield/mods/17318'>Nexus</a>"
-         " &nbsp;·&nbsp; "
-         "<a href='https://github.com/MK-HATERS/bsplugins-extended'>GitHub</a>"
-         "</small>"),
-      page);
-  aboutLabel->setOpenExternalLinks(true);
-  aboutLabel->setAlignment(Qt::AlignCenter);
-  vbox->addWidget(aboutLabel);
+  vbox->addWidget(grpBox);
 
-  // ---- .bs Generator ----
+  // ── 2. Mod Author Tools ───────────────────────────────────────────────────
   auto* bsGroup = new QGroupBox(tr("Mod Author Tools"), page);
   auto* bsLay   = new QVBoxLayout(bsGroup);
-  auto* bsInfo  = new QLabel(
-      tr("Create a <code>.bs</code> hint file that tells BSPlugins which group "
-         "a plugin belongs to. Ship it alongside the plugin in your mod archive."),
-      bsGroup);
-  bsInfo->setWordWrap(true);
-  bsInfo->setStyleSheet(u"color: gray; font-size: small;"_s);
-  bsLay->addWidget(bsInfo);
+  bsLay->setSpacing(4);
 
   auto* bsGenBtn = new QPushButton(tr("Generate .bs file for selected plugin…"), bsGroup);
   bsGenBtn->setToolTip(
@@ -2214,30 +2189,59 @@ QWidget* PluginsWidget::buildSettingsTab(QWidget* parent)
   bsLay->addWidget(bsBatchBtn);
   vbox->addWidget(bsGroup);
 
-  // ---- Named Snapshots ----
-  auto* snapGroup = new QGroupBox(tr("Load Order Snapshots"), page);
-  auto* snapLay   = new QVBoxLayout(snapGroup);
-  auto* snapInfo  = new QLabel(
-      tr("Save named snapshots of your load order — useful as stable restore points "
-         "before experimenting with new mods. Stored in <code>plugins/bsplugins/snapshots/</code>."),
-      snapGroup);
-  snapInfo->setWordWrap(true);
-  snapInfo->setStyleSheet(u"color: gray; font-size: small;"_s);
-  snapLay->addWidget(snapInfo);
+  // ── 3. Load Order ─────────────────────────────────────────────────────────
+  auto* loGroup = new QGroupBox(tr("Load Order"), page);
+  auto* loLay   = new QHBoxLayout(loGroup);
+  loLay->setSpacing(4);
 
-  auto* snapBtnRow = new QHBoxLayout;
-  auto* saveSnapBtn = new QPushButton(tr("Save snapshot…"), snapGroup);
+  auto* saveSnapBtn = new QPushButton(tr("Save snapshot…"), loGroup);
   saveSnapBtn->setToolTip(
       tr("Saves the current plugins.txt, loadorder.txt, plugingroups.txt and "
-         "lockedorder.txt under a name you choose. Use to bookmark a known-good state."));
-  auto* restoreSnapBtn = new QPushButton(tr("Restore snapshot…"), snapGroup);
+         "lockedorder.txt under a name you choose."));
+  auto* restoreSnapBtn = new QPushButton(tr("Restore snapshot…"), loGroup);
   restoreSnapBtn->setToolTip(
-      tr("Lists all saved snapshots and restores the selected one, replacing the "
-         "current load order files. The plugin list reloads automatically."));
-  snapBtnRow->addWidget(saveSnapBtn);
-  snapBtnRow->addWidget(restoreSnapBtn);
-  snapBtnRow->addStretch();
-  snapLay->addLayout(snapBtnRow);
+      tr("Lists all saved snapshots and restores the one you choose."));
+  auto* exportBtn2 = new QPushButton(tr("Copy summary"), loGroup);
+  exportBtn2->setToolTip(
+      tr("Copy a Markdown table of all plugins — group, zone, confidence, reason — "
+         "to the clipboard for sharing or diffing."));
+  auto* nexusBtn = new QPushButton(tr("Nexus page"), loGroup);
+  nexusBtn->setToolTip(tr("Open the BSPlugins Extended Nexus page to check for updates."));
+
+  loLay->addWidget(saveSnapBtn);
+  loLay->addWidget(restoreSnapBtn);
+  loLay->addWidget(exportBtn2);
+  loLay->addWidget(nexusBtn);
+  loLay->addStretch();
+
+  connect(nexusBtn, &QPushButton::clicked, page, []() {
+    QDesktopServices::openUrl(
+        QUrl(QStringLiteral("https://www.nexusmods.com/starfield/mods/17318")));
+  });
+
+  connect(exportBtn2, &QPushButton::clicked, page, [this]() {
+    const QString prefix = m_PluginList->blueprintPrefix();
+    QString md = u"| Plugin | Group | Zone | Confidence | Reason |\n"_s;
+    md         += u"|--------|-------|------|------------|--------|\n"_s;
+    const int count = m_PluginList->pluginCount();
+    for (int i = 0; i < count; ++i) {
+      const auto* p = m_PluginList->getPlugin(i);
+      if (!p) continue;
+      const TESData::Classification cls = TESData::classifyPlugin(*p, prefix);
+      const bool ungrouped = p->group().isEmpty() || p->group() == u"default"_s;
+      const QString group = ungrouped ? cls.groupName : p->group();
+      const QString zone  = TESData::zoneName(cls.zone);
+      auto esc = [](const QString& s) { return QString(s).replace(u'|', u'｜'); };
+      md += u"| %1 | %2 | %3 | %4% | %5 |\n"_s
+                .arg(esc(p->name()), esc(group), esc(zone),
+                     QString::number(cls.confidence), esc(cls.reason));
+    }
+    QGuiApplication::clipboard()->setText(md);
+    bsLog(tr("Group summary (%1 plugins) copied to clipboard.").arg(count));
+  });
+
+  // Snapshot logic (unchanged, just moved into the new loGroup context)
+  auto* snapGroup = loGroup; // alias so the lambdas compile unchanged
 
   connect(saveSnapBtn, &QPushButton::clicked, page, [this]() {
     bool ok = false;
@@ -2298,50 +2302,25 @@ QWidget* PluginsWidget::buildSettingsTab(QWidget* parent)
     m_PluginListModel->invalidate();
     bsLog(tr("Snapshot \"%1\" restored.").arg(chosen));
   });
-  vbox->addWidget(snapGroup);
+  vbox->addWidget(loGroup);
 
-  // ---- Export ----
-  auto* exportGroup = new QGroupBox(tr("Export"), page);
-  auto* exportLay   = new QVBoxLayout(exportGroup);
-  auto* exportInfo  = new QLabel(
-      tr("Copy a Markdown table of all plugins — name, group, zone, confidence, "
-         "and classification reason — to the clipboard for sharing or logging."),
-      exportGroup);
-  exportInfo->setWordWrap(true);
-  exportInfo->setStyleSheet(u"color: gray; font-size: small;"_s);
-  exportLay->addWidget(exportInfo);
-
-  auto* exportBtn = new QPushButton(tr("Copy group summary to clipboard"), exportGroup);
-  exportBtn->setToolTip(
-      tr("Generates a Markdown table listing every plugin with its group, zone, "
-         "confidence and reason. Paste into Nexus posts, load-order help threads, "
-         "or a text file for diffing before and after sorting."));
-  connect(exportBtn, &QPushButton::clicked, page, [this]() {
-    const QString prefix = m_PluginList->blueprintPrefix();
-    QString md = u"| Plugin | Group | Zone | Confidence | Reason |\n"_s;
-    md         += u"|--------|-------|------|------------|--------|\n"_s;
-    const int count = m_PluginList->pluginCount();
-    for (int i = 0; i < count; ++i) {
-      const auto* p = m_PluginList->getPlugin(i);
-      if (!p) continue;
-      const TESData::Classification cls = TESData::classifyPlugin(*p, prefix);
-      const bool ungrouped = p->group().isEmpty() || p->group() == u"default"_s;
-      const QString group = ungrouped ? cls.groupName : p->group();
-      const QString zone  = TESData::zoneName(cls.zone);
-      // Escape pipes so the table isn't broken by plugin names with | in them
-      auto esc = [](const QString& s) { return QString(s).replace(u'|', u'｜'); };
-      md += u"| %1 | %2 | %3 | %4% | %5 |\n"_s
-                .arg(esc(p->name()), esc(group), esc(zone),
-                     QString::number(cls.confidence), esc(cls.reason));
-    }
-    QGuiApplication::clipboard()->setText(md);
-    bsLog(tr("Group summary (%1 plugins) copied to clipboard.").arg(count));
-  });
-  exportLay->addWidget(exportBtn);
-  vbox->addWidget(exportGroup);
+  // ── 4. About ──────────────────────────────────────────────────────────────
+  auto* aboutLabel = new QLabel(
+      tr("<small><b>BSPlugins Extended v2.9 Beta</b> by MK-HATERS &nbsp;·&nbsp; "
+         "Based on work by Parapets and Alaxouche &nbsp;·&nbsp; "
+         "<a href='https://www.nexusmods.com/starfield/mods/17318'>Nexus</a>"
+         " &nbsp;·&nbsp; "
+         "<a href='https://github.com/MK-HATERS/bsplugins-extended'>GitHub</a>"
+         "</small>"),
+      page);
+  aboutLabel->setOpenExternalLinks(true);
+  aboutLabel->setAlignment(Qt::AlignCenter);
+  aboutLabel->setWordWrap(true);
+  vbox->addWidget(aboutLabel);
 
   vbox->addStretch();
-  return page;
+
+  return scroll;
 }
 
 // ---------------------------------------------------------------------------
