@@ -6,12 +6,9 @@
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QFile>
+#include <QFont>
 #include <QGroupBox>
 #include <QLabel>
-#include <QNetworkAccessManager>
-#include <QNetworkReply>
-#include <QFont>
-#include <QNetworkRequest>
 #include <QPlainTextEdit>
 #include <QProcess>
 #include <QPushButton>

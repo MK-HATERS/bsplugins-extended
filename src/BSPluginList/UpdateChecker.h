@@ -1,43 +1,10 @@
 #ifndef BSPLUGINLIST_UPDATECHECKER_H
 #define BSPLUGINLIST_UPDATECHECKER_H
 
-#include <QObject>
-#include <QString>
-
-class QNetworkAccessManager;
-class QNetworkReply;
-
-namespace BSPluginList
-{
-
-// Async GitHub releases check. Fires updateAvailable() if a newer version
-// exists. The download URL and version string are passed to the signal so
-// the caller can show a notification / restart dialog.
-class UpdateChecker final : public QObject
-{
-  Q_OBJECT
-
-public:
-  static constexpr const char* kReleasesUrl =
-      "https://api.github.com/repos/MK-HATERS/bsplugins-extended/releases/latest";
-
-  explicit UpdateChecker(const QString& currentVersion, QObject* parent = nullptr);
-
-  // Start the async check. Safe to call from the GUI thread.
-  void check();
-
-signals:
-  void updateAvailable(const QString& latestVersion, const QString& downloadUrl);
-  void checkFailed();
-
-private slots:
-  void onReply(QNetworkReply* reply);
-
-private:
-  QString                m_CurrentVersion;
-  QNetworkAccessManager* m_Network = nullptr;
-};
-
-}  // namespace BSPluginList
+// UpdateChecker has been replaced with a simple browser-open approach.
+// Qt6::Network is NOT linked — creating a QNetworkAccessManager inside a
+// MO2 plugin DLL initialises WinHTTP which disrupts MO2's NXM download
+// reception.  Users can check for updates manually via the Nexus link in
+// the Settings tab.
 
 #endif  // BSPLUGINLIST_UPDATECHECKER_H

@@ -13,7 +13,6 @@
 #include "MOPlugin/BSPlugins.h"
 #include "MOPlugin/BSPluginsINI.h"
 #include "TESData/PluginClassifier.h"
-#include "UpdateChecker.h"
 #include "UpdateDialog.h"
 #include "WelcomeDialog.h"
 #include "MOTools/Loot.h"
@@ -308,25 +307,9 @@ PluginsWidget::PluginsWidget(MOBase::IOrganizer* organizer,
   // Only our own Patch Sort button respects the enableSortButton setting.
   updateGroupActionVisibility();
 
-  // Show welcome / changelog dialog and kick off update check after UI is ready
+  // Show welcome / changelog dialog after UI is ready
   organizer->onUserInterfaceInitialized([this](QMainWindow*) {
     checkVersionOnStartup();
-
-    // Async update check — fires updateAvailable() if a newer version exists
-    const QString currentVer = u"2.9.b"_s;
-    auto* checker = new UpdateChecker(currentVer, this);
-    connect(checker, &UpdateChecker::updateAvailable, this,
-            [this, currentVer](const QString& latest, const QString& url) {
-              bsWarn(tr("Update available: v%1 → v%2").arg(currentVer, latest));
-              if (MOPlugin::pluginINI().skipVersion() == latest) return;
-              UpdateDialog dlg(latest, url, topLevelWidget());
-              dlg.exec();
-            });
-    connect(checker, &UpdateChecker::checkFailed, this, [this]() {
-      bsLog(tr("Update check failed — check your network connection."));
-    });
-    checker->check();
-
     // Log a startup notice so the panel shows something on first open
     bsLog(tr("BSPlugins Extended v2.9 Beta ready. Run LOOT sort to classify plugins."));
   });
@@ -2090,37 +2073,30 @@ QWidget* PluginsWidget::buildSettingsTab(QWidget* parent)
 
   // ---- Updates ----
   auto* updGroup = new QGroupBox(tr("Updates"), page);
-  auto* updForm  = new QFormLayout(updGroup);
-  auto* nexusEdit = new QLineEdit(
-      ini.nexusUrl().isEmpty() ? QStringLiteral("https://www.nexusmods.com/")
-                               : ini.nexusUrl(),
+  auto* updLay   = new QVBoxLayout(updGroup);
+  auto* updInfo  = new QLabel(
+      tr("Check the Nexus page for a newer version of BSPlugins Extended. "
+         "Automatic network checks are disabled to avoid interfering with "
+         "MO2's Nexus download system."),
       updGroup);
-  nexusEdit->setPlaceholderText(tr("Nexus Mods page URL for this plugin"));
-  nexusEdit->setToolTip(
-      tr("When an update is found, open this URL instead of GitHub releases."));
-  connect(nexusEdit, &QLineEdit::textChanged, updGroup, [&ini](const QString& t) {
-    ini.setNexusUrl(t.trimmed());
+  updInfo->setWordWrap(true);
+  updInfo->setStyleSheet(u"color: gray; font-size: small;"_s);
+  updLay->addWidget(updInfo);
+  auto* nexusBtn = new QPushButton(tr("Open Nexus page (check for updates)"), updGroup);
+  nexusBtn->setToolTip(tr("Opens the Nexus Mods page for BSPlugins Extended in your browser."));
+  connect(nexusBtn, &QPushButton::clicked, page, []() {
+    QDesktopServices::openUrl(
+        QUrl(QStringLiteral("https://www.nexusmods.com/starfield/mods/17318")));
   });
-  updForm->addRow(tr("Nexus URL:"), nexusEdit);
-
-  auto* checkNowBtn = new QPushButton(tr("Check for update now"), updGroup);
-  connect(checkNowBtn, &QPushButton::clicked, page, [this]() {
-    auto* checker = new UpdateChecker(u"2.9.b"_s, this);
-    connect(checker, &UpdateChecker::updateAvailable, this,
-            [this](const QString& latest, const QString& url) {
-              bsWarn(tr("Update available: v%1").arg(latest));
-              UpdateDialog dlg(latest, url, topLevelWidget());
-              dlg.exec();
-            });
-    checker->check();
-  });
-  updForm->addRow(QString(), checkNowBtn);
+  updLay->addWidget(nexusBtn);
   vbox->addWidget(updGroup);
 
   // ---- About ----
   auto* aboutLabel = new QLabel(
-      tr("<small>BSPlugins Extended v2.9 Beta (BETA) by MK-HATERS<br>"
+      tr("<small>BSPlugins Extended v2.9 Beta by MK-HATERS<br>"
          "Based on work by Parapets and Alaxouche<br>"
+         "<a href='https://www.nexusmods.com/starfield/mods/17318'>Nexus</a>"
+         " &nbsp;·&nbsp; "
          "<a href='https://github.com/MK-HATERS/bsplugins-extended'>GitHub</a>"
          "</small>"),
       page);
