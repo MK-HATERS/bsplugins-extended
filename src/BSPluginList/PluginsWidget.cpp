@@ -1819,14 +1819,6 @@ void PluginsWidget::refreshInfoTab(const TESData::FileInfo* plugin)
   const TESData::Classification cls =
       TESData::classifyPlugin(*plugin, m_PluginList->blueprintPrefix());
 
-  const char* confColor = cls.confidence >= 70 ? "#4caf50"
-                        : cls.confidence >= 40 ? "#ff9800"
-                                               : "#9e9e9e";
-  const int filled = std::clamp((cls.confidence + 10) / 20, 1, 5);
-  const QString dots = u"<span style='color:%3'>%1%2</span>"_s
-                           .arg(QString(filled, u'●'), QString(5 - filled, u'○'))
-                           .arg(QString::fromLatin1(confColor));
-
   const auto* loot = m_PluginList->getLootReport(plugin->name());
 
   QString html =
@@ -1839,10 +1831,19 @@ void PluginsWidget::refreshInfoTab(const TESData::FileInfo* plugin)
   if (!types.isEmpty())
     html += u"<tr><td style='color:gray'>%1</td><td>%2</td></tr>"_s
                 .arg(tr("Type"), types.join(u", "_s));
-  if (cls.zone != TESData::PluginZone::Unknown)
+  if (cls.zone != TESData::PluginZone::Unknown) {
+    // Build confidence indicator only when we'll actually show it.
+    const char* confColor = cls.confidence >= 70 ? "#4caf50"
+                          : cls.confidence >= 40 ? "#ff9800"
+                                                 : "#9e9e9e";
+    const int filled = std::clamp((cls.confidence + 10) / 20, 1, 5);
+    const QString dots = u"<span style='color:%3'>%1%2</span>"_s
+                             .arg(QString(filled, u'●'), QString(5 - filled, u'○'))
+                             .arg(QString::fromLatin1(confColor));
     html += u"<tr><td style='color:gray'>%1</td><td>%2 %3 "
             u"<span style='color:gray;font-style:italic'>%4</span></td></tr>"_s
                 .arg(tr("Group"), cls.groupName, dots, cls.reason);
+  }
   if (!plugin->group().isEmpty() && plugin->group() != u"default"_s)
     html += u"<tr><td style='color:gray'>%1</td><td><b>%2</b></td></tr>"_s
                 .arg(tr("Assigned"), plugin->group());
@@ -2286,14 +2287,19 @@ QWidget* PluginsWidget::buildSettingsTab(QWidget* parent)
     QStringList groups;
     for (const QString& rawLine : text.split(u'\n')) {
       const QString line = rawLine.trimmed();
-      if (!line.startsWith(u'|') || line.startsWith(u"| ---") ||
-          line.startsWith(u"| Plugin")) continue;
-      const QStringList cells = line.split(u'|');
-      if (cells.size() < 3) continue;
-      const QString pluginName = cells.at(1).trimmed()
-                                     .replace(u'｜', u'|');  // unescape
-      const QString groupName  = cells.at(2).trimmed()
-                                     .replace(u'｜', u'|');
+      // Skip non-table lines, header row, and separator rows (|---|---|).
+      // The exported separator is |--------|...| — detect by the first cell
+      // being all dashes after trimming.
+      if (!line.startsWith(u'|')) continue;
+      const QStringList rawCells = line.split(u'|');
+      if (rawCells.size() < 3) continue;
+      const QString firstCell = rawCells.at(1).trimmed();
+      if (firstCell.isEmpty() ||
+          firstCell == u"Plugin"_s ||
+          firstCell.count(u'-') == firstCell.size()) continue;
+      // rawCells already computed above for the separator check
+      const QString pluginName = rawCells.at(1).trimmed().replace(u'｜', u'|');
+      const QString groupName  = rawCells.at(2).trimmed().replace(u'｜', u'|');
       if (pluginName.isEmpty() || groupName.isEmpty() ||
           groupName.compare(u"Unclassified"_s, Qt::CaseInsensitive) == 0 ||
           groupName.compare(u"default"_s, Qt::CaseInsensitive) == 0) {
@@ -2313,7 +2319,9 @@ QWidget* PluginsWidget::buildSettingsTab(QWidget* parent)
     for (auto it = byGroup.constBegin(); it != byGroup.constEnd(); ++it)
       m_PluginListModel->setGroup(it.value(), it.key());
 
-    if (applied > 0) m_PluginListModel->invalidate();
+    // setGroup() already emits dataChanged(GroupingRole) for each batch;
+    // the proxy re-sorts automatically. invalidate() would be a needless full
+    // model reset that loses scroll position and triggers a conflict prewarm.
     bsLog(tr("Import groups: %1 applied, %2 skipped.").arg(applied).arg(skipped));
     QMessageBox::information(topLevelWidget(), tr("Import groups"),
                              tr("Applied group assignments for %1 plugin(s).\n"
