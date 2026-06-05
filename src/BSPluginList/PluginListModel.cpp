@@ -122,8 +122,6 @@ QVariant PluginListModel::data(const QModelIndex& index, int role) const
     return conflictData(index);
   case FlagsIconRole:
     return iconData(index);
-  case BSFlagsIconRole:
-    return bsFlagsIconData(index);
   case OriginRole: {
     const int id = index.row();
     return m_Plugins->getOriginName(id);
@@ -811,33 +809,6 @@ QVariant PluginListModel::iconData(const QModelIndex& index) const
   const auto result = QVariant::fromValue(flag);
   m_FlagsCache.insert(id, result);
   return result;
-}
-
-// Returns the BSFlagsIconRole value: only our Starfield-specific flags.
-// These live in COL_BSINFO, separate from MO2's existing Flags column.
-QVariant PluginListModel::bsFlagsIconData(const QModelIndex& index) const
-{
-  const int id = index.row();
-  const auto plugin = m_Plugins->getPlugin(id);
-  if (!plugin) return QVariant();
-
-  using enum TESData::FileInfo::EFlag;
-  uint flag = 0;
-
-  if (plugin->isMediumFlagged())
-    flag |= FLAG_MEDIUM;
-
-  if (plugin->isBlueprintFlagged() || plugin->isBlueprintPrefixed())
-    flag |= FLAG_BLUEPRINT;
-
-  if (plugin->enabled()) {
-    const int threshold = MOPlugin::pluginINI().patchThreshold();
-    for (const int count : plugin->getInferredOverrides()) {
-      if (count >= threshold) { flag |= FLAG_PATCH_SUGGESTION; break; }
-    }
-  }
-
-  return QVariant::fromValue(flag);
 }
 
 QVariant PluginListModel::headerData(int section, Qt::Orientation orientation,

@@ -45,7 +45,6 @@
 #include <QScrollArea>
 #include <QSortFilterProxyModel>
 #include <QSpinBox>
-#include <QSplitter>
 #include <QTextBrowser>
 #include <QVBoxLayout>
 #include <QInputDialog>
@@ -82,28 +81,34 @@ PluginsWidget::PluginsWidget(MOBase::IOrganizer* organizer,
   optionsMenu = listOptionsMenu();
   ui->listOptionsBtn->setMenu(optionsMenu);
 
-  // ---- Supplementary tab panel: Info / Log / Settings ----
-  // The plugin list stays always-visible as the main content; we add a
-  // compact tabbed section below it for Info, Log and Settings.
-  // (No "Plugins" tab here — this panel IS the Plugins tab.)
+  // ---- Plugin list: full height in this tab --------------------------------
+  // Info / Log / Settings live in the separate BSPlugins tab (injected by
+  // BSPlugins::initPlugin via a second onUserInterfaceInitialized callback).
+  // Call releaseInfoPanel() from that callback to transplant the panel widget.
   {
     auto* rootLayout      = qobject_cast<QVBoxLayout*>(layout());
     auto* pluginsContainer = findChild<QWidget*>(u"pluginsContainer"_s);
 
     if (rootLayout && pluginsContainer) {
-      auto* innerTabs = new QTabWidget(this);
-      innerTabs->setDocumentMode(true);
+      // Plugin list occupies the full height — no splitter, no sub-panel here.
+      rootLayout->addWidget(pluginsContainer);
+
+      // Build the Info/Log/Settings panel as a hidden widget owned by us.
+      // BSPlugins will call releaseInfoPanel() to transplant it into the new tab.
+      m_InfoPanel = new QTabWidget(this);
+      m_InfoPanel->setDocumentMode(true);
+      m_InfoPanel->hide();   // hidden until BSPluginsPanel adopts it
 
       // ── Tab 1: Info ───────────────────────────────────────────────────
-      // Shows conflict/classification details for the selected plugin.
-      // Syncs via the pluginList selection model.
+      auto* innerTabs = m_InfoPanel;  // alias for the code below
+
       auto* infoPage = new QWidget(innerTabs);
       auto* infoLay  = new QVBoxLayout(infoPage);
       infoLay->setContentsMargins(4, 4, 4, 4);
       infoLay->setSpacing(4);
 
       auto* infoHint = new QLabel(
-          tr("Select a plugin in the list above to see details here."), infoPage);
+          tr("Select a plugin in the Plugins tab to see details here."), infoPage);
       infoHint->setAlignment(Qt::AlignCenter);
       infoHint->setWordWrap(true);
       infoHint->setStyleSheet(u"color: gray;"_s);
@@ -246,24 +251,13 @@ PluginsWidget::PluginsWidget(MOBase::IOrganizer* organizer,
              "classification decisions. Nothing is written to MO2's main log."));
 
       // ── Tab 3: Settings ───────────────────────────────────────────────
-      // Inline settings backed by BSPluginsINI — no separate dialog needed.
       auto* settingsPage = buildSettingsTab(innerTabs);
       innerTabs->addTab(settingsPage, tr("Settings"));
       innerTabs->setTabToolTip(2,
-          tr("Configure group names, patch detection threshold, update URL. "
+          tr("Configure group names, patch detection threshold and more. "
              "Changes save immediately to settings.ini and survive plugin updates."));
 
-      // Plugin list above (stretches), info/log/settings panel below.
-      // The panel starts at 260px; double-click the handle to collapse it.
-      auto* splitter = new QSplitter(Qt::Vertical, this);
-      splitter->addWidget(pluginsContainer);
-      splitter->addWidget(innerTabs);
-      splitter->setSizes({10000, 260});
-      splitter->setCollapsible(0, false);
-      splitter->setCollapsible(1, true);   // panel can collapse to zero
-      splitter->setHandleWidth(6);
-
-      rootLayout->addWidget(splitter);
+      // Done — m_InfoPanel is hidden and will be adopted by BSPluginsPanel.
     }
   }
 
@@ -477,6 +471,20 @@ PluginsWidget::PluginsWidget(MOBase::IOrganizer* organizer,
 
   synchronizePluginLists(organizer);
   updatePluginCount();
+}
+
+QWidget* PluginsWidget::releaseInfoPanel()
+{
+  if (!m_InfoPanel) return nullptr;
+  auto* panel  = m_InfoPanel;
+  m_InfoPanel  = nullptr;
+  panel->show();   // was hidden while owned here
+  return panel;
+}
+
+PluginListView* PluginsWidget::pluginListView() const
+{
+  return ui->pluginList;
 }
 
 PluginsWidget::~PluginsWidget() noexcept
@@ -702,8 +710,15 @@ void PluginsWidget::onPanelActivated()
 {
   if (m_DeferPostLootRefresh) {
     m_DeferPostLootRefresh = false;
-    QTimer::singleShot(1000, this, [this]() {
+    const bool doReview    = m_DeferPostLootGroupReview;
+    m_DeferPostLootGroupReview = false;
+    QTimer::singleShot(1000, this, [this, doReview]() {
       refreshPluginListPreservingScroll();
+      if (doReview) {
+        // Give the model a moment to settle after the refresh before
+        // showing the group review dialog.
+        QTimer::singleShot(300, this, &PluginsWidget::showGroupReviewDialog);
+      }
     });
   }
 }
@@ -1416,9 +1431,10 @@ void PluginsWidget::onFinishedRun(const QString& binary,
     MOBase::shellDeleteQuiet(loadOrderName + ".snapshot", parent);
     MOBase::shellDeleteQuiet(lockedOrderName + ".snapshot", parent);
 
-    m_DeferPostLootRefresh = true;
-    m_IsRunningApp         = false;
-    m_ExternalStatesChanged = false;
+    m_DeferPostLootRefresh     = true;
+    m_DeferPostLootGroupReview = true;   // trigger group review once the list refreshes
+    m_IsRunningApp             = false;
+    m_ExternalStatesChanged    = false;
     return;
   }
 
@@ -1644,9 +1660,12 @@ void PluginsWidget::checkLoadOrderChanged(const QString& binaryName)
   const bool loadOrderChanged = m_ExternalStatesChanged ||
                                 hashFile(loadOrderName) != hashFile(loadOrderSnapshot);
 
+  // Track whether the user accepted an externally-sorted order so we can
+  // show the group review dialog after the model refreshes.
+  bool externalSortAccepted = false;
+
   if (loadOrderChanged) {
     if (binaryName.compare("Loot.exe", Qt::CaseInsensitive) != 0) {
-
 
       bool shouldRestore = true;
       if (enableWarning) {
@@ -1671,6 +1690,9 @@ void PluginsWidget::checkLoadOrderChanged(const QString& binaryName)
 
           return;
         }
+      } else {
+        // User clicked Yes — the external sort order will be kept.
+        externalSortAccepted = true;
       }
     }
   }
@@ -1679,6 +1701,11 @@ void PluginsWidget::checkLoadOrderChanged(const QString& binaryName)
   MOBase::shellDeleteQuiet(loadOrderSnapshot, parent);
   MOBase::shellDeleteQuiet(lockedOrderSnapshot, parent);
   m_PluginListModel->invalidate();
+
+  if (externalSortAccepted) {
+    // Delay slightly so the model fully refreshes before the dialog opens.
+    QTimer::singleShot(400, this, &PluginsWidget::showGroupReviewDialog);
+  }
 }
 
 void PluginsWidget::importLootGroups()
@@ -2201,16 +2228,21 @@ QWidget* PluginsWidget::buildSettingsTab(QWidget* parent)
   auto* restoreSnapBtn = new QPushButton(tr("Restore snapshot…"), loGroup);
   restoreSnapBtn->setToolTip(
       tr("Lists all saved snapshots and restores the one you choose."));
-  auto* exportBtn2 = new QPushButton(tr("Copy summary"), loGroup);
+  auto* exportBtn2 = new QPushButton(tr("Export groups"), loGroup);
   exportBtn2->setToolTip(
-      tr("Copy a Markdown table of all plugins — group, zone, confidence, reason — "
-         "to the clipboard for sharing or diffing."));
+      tr("Copy a Markdown table of all plugins — name, group, zone, confidence, reason —\n"
+         "to the clipboard. Share with others or paste back with Import to bulk-assign."));
+  auto* importBtn = new QPushButton(tr("Import groups"), loGroup);
+  importBtn->setToolTip(
+      tr("Paste a previously-exported Markdown table from the clipboard to bulk-assign\n"
+         "groups. Only the Plugin and Group columns are used; existing groups are replaced."));
   auto* nexusBtn = new QPushButton(tr("Nexus page"), loGroup);
   nexusBtn->setToolTip(tr("Open the BSPlugins Extended Nexus page to check for updates."));
 
   loLay->addWidget(saveSnapBtn);
   loLay->addWidget(restoreSnapBtn);
   loLay->addWidget(exportBtn2);
+  loLay->addWidget(importBtn);
   loLay->addWidget(nexusBtn);
   loLay->addStretch();
 
@@ -2238,6 +2270,55 @@ QWidget* PluginsWidget::buildSettingsTab(QWidget* parent)
     }
     QGuiApplication::clipboard()->setText(md);
     bsLog(tr("Group summary (%1 plugins) copied to clipboard.").arg(count));
+  });
+
+  connect(importBtn, &QPushButton::clicked, page, [this]() {
+    const QString text = QGuiApplication::clipboard()->text().trimmed();
+    if (text.isEmpty()) {
+      QMessageBox::information(topLevelWidget(), tr("Import groups"),
+                               tr("Clipboard is empty. Copy a group summary first using Export."));
+      return;
+    }
+    // Parse Markdown table: | Plugin | Group | ... |
+    // Skip header and separator rows; use columns 0 (Plugin) and 1 (Group).
+    int applied = 0, skipped = 0;
+    QModelIndexList indices;
+    QStringList groups;
+    for (const QString& rawLine : text.split(u'\n')) {
+      const QString line = rawLine.trimmed();
+      if (!line.startsWith(u'|') || line.startsWith(u"| ---") ||
+          line.startsWith(u"| Plugin")) continue;
+      const QStringList cells = line.split(u'|');
+      if (cells.size() < 3) continue;
+      const QString pluginName = cells.at(1).trimmed()
+                                     .replace(u'｜', u'|');  // unescape
+      const QString groupName  = cells.at(2).trimmed()
+                                     .replace(u'｜', u'|');
+      if (pluginName.isEmpty() || groupName.isEmpty() ||
+          groupName.compare(u"Unclassified"_s, Qt::CaseInsensitive) == 0 ||
+          groupName.compare(u"default"_s, Qt::CaseInsensitive) == 0) {
+        ++skipped;
+        continue;
+      }
+      const int idx = m_PluginList->getIndex(pluginName);
+      if (idx < 0) { ++skipped; continue; }
+      indices.append(m_PluginListModel->index(idx, 0));
+      groups.append(groupName);
+      ++applied;
+    }
+    // Apply in batches per unique group to minimise model updates
+    QMap<QString, QModelIndexList> byGroup;
+    for (int i = 0; i < indices.size(); ++i)
+      byGroup[groups.at(i)].append(indices.at(i));
+    for (auto it = byGroup.constBegin(); it != byGroup.constEnd(); ++it)
+      m_PluginListModel->setGroup(it.value(), it.key());
+
+    if (applied > 0) m_PluginListModel->invalidate();
+    bsLog(tr("Import groups: %1 applied, %2 skipped.").arg(applied).arg(skipped));
+    QMessageBox::information(topLevelWidget(), tr("Import groups"),
+                             tr("Applied group assignments for %1 plugin(s).\n"
+                                "%2 skipped (not found or no group set).")
+                                 .arg(applied).arg(skipped));
   });
 
   // Snapshot logic (unchanged, just moved into the new loGroup context)

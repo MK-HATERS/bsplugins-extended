@@ -10,10 +10,13 @@
 
 #include <QMetaObject>
 #include <QSortFilterProxyModel>
+#include <QTabWidget>
 #include <QTextBrowser>
 #include <QWidget>
 
 class Ui_PluginsWidget;
+
+namespace BSPluginList { class PluginListView; }
 
 namespace BSPluginList
 {
@@ -96,6 +99,14 @@ private:
   [[nodiscard]] QWidget* buildSettingsTab(QWidget* parent);
   [[nodiscard]] bool confirmMassOperation(const QString& text) const;
 
+  // Called by BSPluginsPanel: transfers ownership of the Info/Log/Settings
+  // QTabWidget out of PluginsWidget so BSPluginsPanel can host it.
+  [[nodiscard]] QWidget* releaseInfoPanel();
+
+  // Accessors for cross-panel wiring (BSPluginsPanel needs these)
+  [[nodiscard]] TESData::PluginList*  pluginList()  const { return m_PluginList; }
+  [[nodiscard]] PluginListModel*      pluginListModel() const { return m_PluginListModel; }
+  [[nodiscard]] PluginListView*       pluginListView() const;
 
   void synchronizePluginLists(MOBase::IOrganizer* organizer);
 
@@ -112,15 +123,17 @@ private:
   PluginSortFilterProxyModel* m_SortProxy = nullptr;
   PluginGroupProxyModel* m_GroupProxy     = nullptr;
   QTextBrowser* m_InfoBrowser             = nullptr;
+  QTabWidget*   m_InfoPanel               = nullptr;  // owned here; released to BSPluginsPanel
   IPanelInterface* m_PanelInterface;
 
   MOBase::IOrganizer* m_Organizer;
 
-  bool m_DidUpdateMasterList   = false;
-  bool m_OrganizerRefreshing   = false;
-  bool m_IsRunningApp          = false;
-  bool m_DeferPostLootRefresh  = false;
-  bool m_ExternalStatesChanged = false;
+  bool m_DidUpdateMasterList        = false;
+  bool m_OrganizerRefreshing        = false;
+  bool m_IsRunningApp               = false;
+  bool m_DeferPostLootRefresh       = false;
+  bool m_DeferPostLootGroupReview   = false;  // show group review after deferred Loot.exe refresh
+  bool m_ExternalStatesChanged      = false;
   int m_PendingScrollPosition  = -1;
   QMetaObject::Connection m_ViewSelectionChangedConnection;
 };

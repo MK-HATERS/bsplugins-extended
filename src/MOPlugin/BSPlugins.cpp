@@ -1,8 +1,11 @@
 #include "BSPlugins.h"
 
+#include "BSPluginList/BSPluginsPanel.h"
 #include "BSPluginList/PluginsWidget.h"
 #include "BSPluginsINI.h"
 #include "Settings.h"
+
+#include <QTabWidget>
 
 using namespace Qt::Literals::StringLiterals;
 
@@ -14,6 +17,25 @@ bool BSPlugins::initPlugin(MOBase::IOrganizer* organizer)
   // Load INI from our plugin subfolder (created on first run if absent).
   // Schema migration preserves group name customizations across updates.
   MOPlugin::pluginINI().load();
+
+  // Second onUserInterfaceInitialized callback: inject the "BSPlugins" tab.
+  // The first callback (from IPluginPanel::init) has already registered and
+  // will run before this one, so by the time this fires m_PluginsWidget is
+  // set and the Plugins tab widget has objectName "espTab".
+  organizer->onUserInterfaceInitialized([this](QMainWindow* mainWindow) {
+    if (!m_PluginsWidget) return;
+
+    const auto tabWidget = mainWindow->findChild<QTabWidget*>(u"tabWidget"_s);
+    if (!tabWidget) return;
+
+    // Find our PluginsWidget by objectName (IPluginPanel gave it "espTab")
+    const auto espTab = tabWidget->findChild<QWidget*>(u"espTab"_s);
+    const int insertIdx = espTab ? tabWidget->indexOf(espTab) + 1
+                                 : tabWidget->count();
+
+    auto* panel = new BSPluginList::BSPluginsPanel(m_PluginsWidget, tabWidget);
+    tabWidget->insertTab(insertIdx, panel, tr("BSPlugins"));
+  });
 
   return true;
 }
@@ -44,7 +66,7 @@ QString BSPlugins::description() const
 
 MOBase::VersionInfo BSPlugins::version() const
 {
-  return MOBase::VersionInfo(0, 2, 0, 0, MOBase::VersionInfo::RELEASE_BETA);
+  return MOBase::VersionInfo(2, 9, 0, 0, MOBase::VersionInfo::RELEASE_BETA);
 }
 
 QList<MOBase::PluginSetting> BSPlugins::settings() const
@@ -94,9 +116,9 @@ bool BSPlugins::enabledByDefault() const
 
 QWidget* BSPlugins::createWidget(IPanelInterface* panelInterface, QWidget* parent)
 {
-  const auto widget =
+  m_PluginsWidget =
       new BSPluginList::PluginsWidget(m_Organizer, panelInterface, parent);
-  return widget;
+  return m_PluginsWidget;
 }
 
 QString BSPlugins::label() const

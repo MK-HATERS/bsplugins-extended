@@ -3,6 +3,12 @@
 
 #include "IPluginPanel.h"
 
+namespace BSPluginList
+{
+  class PluginsWidget;
+  class BSPluginsPanel;
+}
+
 class BSPlugins final : public IPluginPanel
 {
   Q_OBJECT
@@ -33,7 +39,8 @@ public:
   Position position() const override;
 
 private:
-  MOBase::IOrganizer* m_Organizer;
+  MOBase::IOrganizer*             m_Organizer     = nullptr;
+  BSPluginList::PluginsWidget*    m_PluginsWidget  = nullptr;
 };
 
 #endif  // BSPLUGINS_H
